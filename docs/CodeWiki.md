@@ -4,6 +4,23 @@
 > 版本：1.0.0（APK `versionCode 20`）
 > 文档定位：面向开发者的完整代码导读，覆盖架构、模块职责、关键类与函数、依赖关系、运行与构建方式、数据与安全模型。
 
+| 文档信息 | 值 |
+| --- | --- |
+| 对应代码 | commit `a43250a`（以仓库当前 HEAD 为准） |
+| APK 版本 | `versionName 1.0.0` / `versionCode 20` |
+| 资源白名单 | 52 项（街机 23、GBA 12、MD 8、SFC 9） |
+| 核对日期 | 2026-11-19 |
+| 核对方式 | 源码走读 + `python3 -m unittest discover -s tests -v`（28 项通过） |
+
+**文档约定**
+
+- 正文中的代码块除特别注明外均为**节选或示意**，完整实现以对应的源码链接为准。
+- 文件链接使用仓库相对路径（如 `../skills/...`），在 GitHub、VS Code、Typora 中均可直接跳转。
+- “电视端”指运行 APK 的 Android TV / 电视盒子；“电脑端”指执行部署 Skill 的主机。
+- 目录、文件名、状态码、JSON 字段名保持英文原样，不做翻译。
+- 易变数字（版本号、资源数量、文件大小、测试数量）统一登记在 [1.1 关键事实与来源](#11-关键事实与来源)，升级时优先更新该表。
+- 本文档只描述**当前仓库快照**；Release 构建输入的差异见 [15.2 仓库完整性](#152-仓库完整性)。
+
 ---
 
 ## 目录
@@ -23,6 +40,7 @@
 13. [安全模型](#13-安全模型)
 14. [二次开发指南](#14-二次开发指南)
 15. [已知限制与注意事项](#15-已知限制与注意事项)
+16. [附录：速查表](#16-附录速查表)
 
 ---
 
@@ -54,6 +72,35 @@
 | 前端 | 原生 JavaScript（ES5 兼容）、Canvas、WebView、IndexedDB |
 | 模拟器 | Libretro 核心（`.so`）+ JSNES（浏览器后备） |
 | 构建 | aapt2、javac、d8、zipalign、apksigner |
+
+### 1.1 关键事实与来源
+
+下表是文档中最容易随版本变化的数字。升级时只需核对本表，并同步更新正文中的引用。
+
+| 事实 | 当前值 | 事实来源 |
+| --- | --- | --- |
+| APK 版本 | `1.0.0` / `versionCode 20` | [AndroidManifest.xml](../source/app/src/main/AndroidManifest.xml) |
+| APK 大小 | 22,770,426 字节（约 21.7 MiB） | [release.json](../skills/childhood-arcade-tv/assets/release.json) |
+| 资源包大小 | 392,915,414 字节（约 374.7 MiB） | [release.json](../skills/childhood-arcade-tv/assets/release.json) |
+| 资源包解压后 | 约 495 MiB | 发布记录 / 构建时的资源清单 |
+| 游戏规模 | 179 款游戏、190 个版本 | `release-catalog.json`（Release 构建输入） |
+| 资源白名单 | 52 项（街机 23、GBA 12、MD 8、SFC 9） | [deployment-resources.json](../source/app/src/main/assets/deployment-resources.json) |
+| 部署单元测试 | 28 项，5 个测试文件 | [tests](../skills/childhood-arcade-tv/tests) |
+| 默认传输协议 | `provider` | [release.json](../skills/childhood-arcade-tv/assets/release.json) |
+
+> 说明：`release-catalog.json` 不在本仓库中，179/190 是发布包的事实；仓库内的 `catalog.js` 是空占位。
+>
+> **版本号口径**：Android APK 使用 `1.0.0` / `versionCode 20`；`source/package.json` 的 `0.5.3` 仅用于前端开发依赖；`index.html` 中的 `?v=0.5.x` 是静态资源缓存参数，不是发布版本。
+
+### 1.2 阅读路线
+
+| 你的目标 | 建议阅读顺序 |
+| --- | --- |
+| 第一次接触项目 | [1 项目概览](#1-项目概览) → [2 仓库结构](#2-仓库结构) → [3 整体架构](#3-整体架构) → [10 运行方式](#10-运行方式) → [14 二次开发指南](#14-二次开发指南) |
+| 维护电脑端部署工具 | [4 部署 Skill](#4-电脑端部署-skillpython) → [8 关键流程](#8-关键业务流程时序) → [12 状态码](#12-状态码与错误处理) → [16.6 故障排查](#166-故障排查-faq) |
+| 开发电视端 / 前端 | [5 Android 应用](#5-电视端-android-应用java) → [6 WebView 前端](#6-webview-前端javascript) → [11 配置与数据文件](#11-配置与数据文件) → [16.4 支持矩阵](#164-平台内核与按键支持矩阵) |
+| 构建与发布 | [7 资源包与构建](#7-资源包构建与第三方内核) → [8 关键流程](#8-关键业务流程时序) → [15 已知限制](#15-已知限制与注意事项) → [16.7 发布检查清单](#167-发布检查清单) |
+| 排查线上问题 | [12 状态码](#12-状态码与错误处理) → [13 安全模型](#13-安全模型) → [15 已知限制](#15-已知限制与注意事项) → [16.6 故障排查](#166-故障排查-faq) |
 
 ---
 
@@ -170,11 +217,11 @@ childhood-arcade/
 
 ## 4. 电脑端部署 Skill（Python）
 
-目录：[skills/childhood-arcade-tv](file:///workspace/skills/childhood-arcade-tv)
+目录：[skills/childhood-arcade-tv](../skills/childhood-arcade-tv)
 
 ### 4.1 入口与命令面
 
-[scripts/tv.py](file:///workspace/skills/childhood-arcade-tv/scripts/tv.py) 只有 5 行，直接转调 `deployment.main()`：
+[scripts/tv.py](../skills/childhood-arcade-tv/scripts/tv.py) 只有 5 行，直接转调 `deployment.main()`：
 
 ```python
 from deployment import main
@@ -182,7 +229,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-[deployment.py](file:///workspace/skills/childhood-arcade-tv/scripts/deployment.py) 的 `main()` 定义命令：
+[deployment.py](../skills/childhood-arcade-tv/scripts/deployment.py) 的 `main()` 定义命令：
 
 | 子命令 | 作用 | 关键参数 |
 | --- | --- | --- |
@@ -217,13 +264,13 @@ class DeploymentError(Exception):
 
 | 函数 | 说明 |
 | --- | --- |
-| `atomic_json(path, value)` | 临时文件 + `fsync` + `Path.replace` 原子替换；权限 `0600`；失败自动清理 |
-| `read_config(home)` | 读 `deployment.json`，缺失时返回 `{'schema': 1}` |
-| `selected_serial(value)` | 规范化地址：IPv4→`:5555`；校验端口 1–65535；拒绝 `-s`、`host;cmd` 等注入形态；空值 → `needs_target` |
-| `artifact(path, expected)` | 校验 APK：扩展名、存在性、SHA-256、ZIP 必须含 `AndroidManifest.xml`/`classes.dex`/`assets/index.html`；计算 `required_free_bytes` |
-| `free_bytes(output, kilobytes)` | 兼容新旧 `df` 输出的可用空间解析 |
-| `deploy(home, config, client, apk, report, announce)` | 部署主状态机（见下） |
-| `main(argv)` | 参数解析、依赖装配、异常收敛、报告落盘 |
+| [`atomic_json(path, value)`](../skills/childhood-arcade-tv/scripts/deployment.py#L31) | 临时文件 + `fsync` + `Path.replace` 原子替换；权限 `0600`；失败自动清理 |
+| [`read_config(home)`](../skills/childhood-arcade-tv/scripts/deployment.py#L47) | 读 `deployment.json`，缺失时返回 `{'schema': 1}` |
+| [`selected_serial(value)`](../skills/childhood-arcade-tv/scripts/deployment.py#L52) | 规范化地址：IPv4→`:5555`；校验端口 1–65535；拒绝 `-s`、`host;cmd` 等注入形态；空值 → `needs_target` |
+| [`artifact(path, expected)`](../skills/childhood-arcade-tv/scripts/deployment.py#L73) | 校验 APK：扩展名、存在性、SHA-256、ZIP 必须含 `AndroidManifest.xml`/`classes.dex`/`assets/index.html`；计算 `required_free_bytes` |
+| [`free_bytes(output, kilobytes)`](../skills/childhood-arcade-tv/scripts/deployment.py#L93) | 兼容新旧 `df` 输出的可用空间解析 |
+| [`deploy(home, config, client, apk, report, announce)`](../skills/childhood-arcade-tv/scripts/deployment.py#L220) | 部署主状态机（见下） |
+| [`main(argv)`](../skills/childhood-arcade-tv/scripts/deployment.py#L318) | 参数解析、依赖装配、异常收敛、报告落盘 |
 
 `artifact()` 的空间估算：
 
@@ -255,7 +302,7 @@ class Client:
   - `legacy` 模式 → `run-as <pkg> ls files/store` + 逐个 `cat`，仅接受白名单文件名（`prefs`/`slot:*`/`battery:*`），写入 JSON（`0600`）。
 - **`page`**：
   - `provider` 模式 → `release_transport.call(self, "health")`。
-  - `legacy` 模式 → `ps -A` 精确匹配进程名（不信任小米 `pidof` 返回值）→ `adb forward tcp:0 localabstract:webview_devtools_remote_<pid>` → `http://127.0.0.1:<port>/json/list` → [webview.page_health](file:///workspace/skills/childhood-arcade-tv/scripts/webview.py) 通过 WebSocket 执行固定表达式。
+  - `legacy` 模式 → `ps -A` 精确匹配进程名（不信任小米 `pidof` 返回值）→ `adb forward tcp:0 localabstract:webview_devtools_remote_<pid>` → `http://127.0.0.1:<port>/json/list` → [webview.page_health](../skills/childhood-arcade-tv/scripts/webview.py) 通过 WebSocket 执行固定表达式。
 
 ### 4.5 `deploy()` 状态机
 
@@ -292,18 +339,18 @@ class Client:
 
 ### 4.6 下载与准备
 
-- [fetch_verified.py](file:///workspace/skills/childhood-arcade-tv/scripts/fetch_verified.py)
+- [fetch_verified.py](../skills/childhood-arcade-tv/scripts/fetch_verified.py)
   `download(url, destination, expected)`：
   强制 HTTPS（重定向也必须是 HTTPS）、大小上限 2 GiB、流式 SHA-256、临时文件原子替换、失败保留旧文件。
-- [prepare_bundle.py](file:///workspace/skills/childhood-arcade-tv/scripts/prepare_bundle.py)
+- [prepare_bundle.py](../skills/childhood-arcade-tv/scripts/prepare_bundle.py)
   `prepare(home, apk, apk_hash, archive, archive_hash)`：
   校验 APK 与 ZIP 哈希 → 安全解压（拒绝绝对路径、`..`、`\`、`:`、符号链接、重复项、>2 GiB、>5000 文件）→ 校验 `game-pack/manifest.json` → 解压目录按哈希命名并原子 `rename` → 写入配置。
-- [setup_release.py](file:///workspace/skills/childhood-arcade-tv/scripts/setup_release.py)
+- [setup_release.py](../skills/childhood-arcade-tv/scripts/setup_release.py)
   `setup(descriptor, home, repository)`：
   校验 `OWNER/REPO` 与 tag → 拼接 `https://github.com/<repo>/releases/download/<tag>/<filename>` → 分别下载 APK 与游戏包到 `home/downloads/<sha256>-arcade.apk|game-pack.zip` → `prepare()` → 写入 `transport`。
   `main()` 在提供 `--serial` 时直接转调 `deployment.main(['deploy', '--serial', ...])`。
 
-- [assets/release.json](file:///workspace/skills/childhood-arcade-tv/assets/release.json) 固定：
+- [assets/release.json](../skills/childhood-arcade-tv/assets/release.json) 固定：
 
 ```json
 {
@@ -319,11 +366,11 @@ class Client:
 
 ### 4.7 资源清单与安装
 
-[resources.py](file:///workspace/skills/childhood-arcade-tv/scripts/resources.py)：
+[resources.py](../skills/childhood-arcade-tv/scripts/resources.py)：
 
 | 函数 | 说明 |
 | --- | --- |
-| `read_pack(path)` | 校验 `schema==1`、文件列表非空；名称必须匹配 `[a-z0-9-]{1,60}\.(zip|gba|md|sfc)`；路径必须相对且位于清单目录内；`0 < bytes ≤ 256 MiB`；逐文件 SHA-256；返回带 `source` 绝对路径的条目 |
+| `read_pack(path)` | 校验 `schema==1`、文件列表非空；名称必须匹配 `[a-z0-9-]{1,60}\.(zip\|gba\|md\|sfc)`；路径必须相对且位于清单目录内；`0 < bytes ≤ 256 MiB`；逐文件 SHA-256；返回带 `source` 绝对路径的条目 |
 | `resource_tool(client, package, apk_path, args)` | provider → `release_transport.call('verify'/'install')`；legacy → `run-as <pkg> /system/bin/sh -c "CLASSPATH=<apk> app_process /system/bin org.childhood.arcade.ResourceTool …"`，解析 `RESOURCE_JSON ` 行 |
 | `install_pack(client, package, entries, announce, report)` | 先全量 `verify`；若目标已存在但哈希不同 → 报错并保留旧文件；计算剩余空间需求（总和 + 最大单文件 + 16 MiB）；逐个 `adb push` 到 `/data/local/tmp/childhood-arcade-<sha256>.zip` → `install` → 复核 → `rm` 暂存 |
 
@@ -331,7 +378,7 @@ class Client:
 
 ### 4.8 正式版传输协议
 
-[release_transport.py](file:///workspace/skills/childhood-arcade-tv/scripts/release_transport.py)
+[release_transport.py](../skills/childhood-arcade-tv/scripts/release_transport.py)
 
 ```text
 AUTH = content://org.childhood.arcade.deployment
@@ -353,7 +400,7 @@ nes/[a-f0-9]{64}.srm
 ### 4.9 页面健康检查
 
 - **provider 模式（正式版）**：直接 `content call --method health`，由 `DeploymentProvider` 返回 APK 内写入的健康快照（超过 5 秒视为过期）。
-- **legacy 模式**：走 DevTools 协议，由 [webview.py](file:///workspace/skills/childhood-arcade-tv/scripts/webview.py) 手写最小 WebSocket 客户端（无第三方依赖）：
+- **legacy 模式**：走 DevTools 协议，由 [webview.py](../skills/childhood-arcade-tv/scripts/webview.py) 手写最小 WebSocket 客户端（无第三方依赖）：
 
 1. 校验 `ws://` 且主机为 `localhost/127.0.0.1`、端口等于本次 `adb forward` 端口。
 2. 完成 HTTP Upgrade 握手并校验 `Sec-WebSocket-Accept`。
@@ -378,7 +425,7 @@ nes/[a-f0-9]{64}.srm
 
 ### 4.10 测试
 
-[tests/](file:///workspace/skills/childhood-arcade-tv/tests) 覆盖了安全关键路径：
+[tests/](../skills/childhood-arcade-tv/tests) 覆盖了安全关键路径：
 
 | 测试文件 | 覆盖点 |
 | --- | --- |
@@ -401,7 +448,7 @@ python3 -m unittest discover -s tests -v
 
 ### 5.1 `MainActivity`：载体与调度中枢
 
-文件：[MainActivity.java](file:///workspace/source/app/src/main/java/org/childhood/arcade/MainActivity.java)
+文件：[MainActivity.java](../source/app/src/main/java/org/childhood/arcade/MainActivity.java)
 
 职责：全屏 Activity、创建 WebView、注册 JS Bridge、分发按键/摇杆事件、管理本地存档目录、处理文件选择与备份导出。
 
@@ -459,7 +506,7 @@ dispatchGenericMotionEvent(MotionEvent e)
 - `gamepad(event)` 判断来源是否为 `SOURCE_GAMEPAD` / `SOURCE_JOYSTICK`。
 - `player(deviceId)` 分配 1/2 号玩家（每个设备最多两人），并通过 `Arcade.nativeRegister(id, player)` 同步给前端。
 - 原生游戏运行中 → `nativeNes.button(player, button, down)`；否则 → `Arcade.nativeKey(...)` 走 UI 导航。
-- 摇杆/十字键在 `dispatchGenericMotionEvent` 中经 [ControllerDirections.update](file:///workspace/source/app/src/main/java/org/childhood/arcade/ControllerDirections.java) 转换，避免 WebView 抢先消费。
+- 摇杆/十字键在 `dispatchGenericMotionEvent` 中经 [ControllerDirections.update](../source/app/src/main/java/org/childhood/arcade/ControllerDirections.java) 转换，避免 WebView 抢先消费。
 
 `nesButton(int code)` 做了平台差异化映射：
 
@@ -488,7 +535,7 @@ dispatchGenericMotionEvent(MotionEvent e)
 
 ### 5.2 `NativeNes`：Libretro 宿主
 
-文件：[NativeNes.java](file:///workspace/source/app/src/main/java/org/childhood/arcade/NativeNes.java)
+文件：[NativeNes.java](../source/app/src/main/java/org/childhood/arcade/NativeNes.java)
 
 这是全项目最复杂的类：通过 JNA 直接调用 Libretro 核心的 C ABI，自行管理帧循环、音频输出、OpenGL 渲染与存档。
 
@@ -579,7 +626,7 @@ NES         : {8,0,2,3,4,5,6,7}
 
 ### 5.3 `DeploymentProvider`：无调试面的传输通道
 
-文件：[DeploymentProvider.java](file:///workspace/source/app/src/main/java/org/childhood/arcade/DeploymentProvider.java)
+文件：[DeploymentProvider.java](../source/app/src/main/java/org/childhood/arcade/DeploymentProvider.java)
 
 - Authority：`org.childhood.arcade.deployment`。
 - Manifest 声明 `android:exported="true"` + `android:permission="android.permission.DUMP"`。
@@ -619,7 +666,7 @@ name.endsWith(".sfc") -> files/sfc/roms/<name>
 
 ### 5.4 `ResourceTool`：legacy 模式的资源 CLI
 
-文件：[ResourceTool.java](file:///workspace/source/app/src/main/java/org/childhood/arcade/ResourceTool.java)
+文件：[ResourceTool.java](../source/app/src/main/java/org/childhood/arcade/ResourceTool.java)
 
 通过 `app_process` + `CLASSPATH=<apk>` 以应用 UID 运行，因此可访问 `files/`。
 
@@ -632,8 +679,8 @@ name.endsWith(".sfc") -> files/sfc/roms/<name>
 
 | 类 | 说明 |
 | --- | --- |
-| [ControllerDirections](file:///workspace/source/app/src/main/java/org/childhood/arcade/ControllerDirections.java) | 方向键二值化：按下阈值 `0.65`、释放阈值 `0.60`（迟滞），十字键阈值 `0.5`；输出 `[上, 下, 左, 右]`。注释说明 SHANWAN 手柄静止偏置可达 `-0.53` |
-| [GbaSaveMemory](file:///workspace/source/app/src/main/java/org/childhood/arcade/GbaSaveMemory.java) | mGBA 固定按 `GBA_SIZE_FLASH1M`（128 KiB）分配存档；`expand()` 用 `0xFF` 填充，保证不截断既有存档 |
+| [ControllerDirections](../source/app/src/main/java/org/childhood/arcade/ControllerDirections.java) | 方向键二值化：按下阈值 `0.65`、释放阈值 `0.60`（迟滞），十字键阈值 `0.5`；输出 `[上, 下, 左, 右]`。注释说明 SHANWAN 手柄静止偏置可达 `-0.53` |
+| [GbaSaveMemory](../source/app/src/main/java/org/childhood/arcade/GbaSaveMemory.java) | mGBA 固定按 `GBA_SIZE_FLASH1M`（128 KiB）分配存档；`expand()` 用 `0xFF` 填充，保证不截断既有存档 |
 
 ### 5.6 Manifest 摘要
 
@@ -657,7 +704,7 @@ isGame="true"
 
 ### 6.1 脚本加载顺序
 
-[index.html](file:///workspace/source/app/src/main/assets/index.html) 中的顺序具有强依赖：
+[index.html](../source/app/src/main/assets/index.html) 中的顺序具有强依赖：
 
 ```text
 vendor/polyfills.min.js   (core-js, 仓库未含)
@@ -672,7 +719,7 @@ app.js                    (应用主体)
 
 ### 6.2 `library.js`：通用工具
 
-文件：[library.js](file:///workspace/source/app/src/main/assets/library.js)
+文件：[library.js](../source/app/src/main/assets/library.js)
 
 | 导出 | 说明 |
 | --- | --- |
@@ -691,7 +738,7 @@ app.js                    (应用主体)
 
 ### 6.3 `engine.js`：JSNES 引擎
 
-文件：[engine.js](file:///workspace/source/app/src/main/assets/engine.js)
+文件：[engine.js](../source/app/src/main/assets/engine.js)
 
 ```js
 Engine.prototype.load(binary, hash)      // 创建 jsnes.NES，渲染 256×240
@@ -707,7 +754,7 @@ Engine.prototype.thumbnail()             // Canvas dataURL
 
 ### 6.4 `multi-engine.js`：iframe 外部内核适配
 
-文件：[multi-engine.js](file:///workspace/source/app/src/main/assets/multi-engine.js)
+文件：[multi-engine.js](../source/app/src/main/assets/multi-engine.js)
 
 - `kind = 'nes'` 时完全代理 JSNES。
 - 其他平台创建 `<iframe class="arcade-frame">`，按系统加载
@@ -720,7 +767,7 @@ Engine.prototype.thumbnail()             // Canvas dataURL
 
 ### 6.5 `native-nes.js`：原生引擎桥接
 
-文件：[native-nes.js](file:///workspace/source/app/src/main/assets/native-nes.js)
+文件：[native-nes.js](../source/app/src/main/assets/native-nes.js)
 
 - 若 `NativeArcade.nativeNesAvailable()` 为假 → 回退到上一层 `multi-engine.js`（NES 最终走 JSNES）。
 - 根据游戏类型调用 `nativeNesStart` / `nativeSfcStart` / `nativeMdStart` / `nativeGbaStart` / `nativeArcadeStart`。
@@ -732,7 +779,7 @@ Engine.prototype.thumbnail()             // Canvas dataURL
 
 ### 6.6 `app.js`：应用主体
 
-文件：[app.js](file:///workspace/source/app/src/main/assets/app.js)（约 51 KB，压缩风格书写）
+文件：[app.js](../source/app/src/main/assets/app.js)（约 51 KB，压缩风格书写）
 
 #### 存储抽象 `Store`
 
@@ -831,7 +878,7 @@ window.Arcade = {
 
 ### 6.7 `style.css`：视觉与平台兼容
 
-文件：[style.css](file:///workspace/source/app/src/main/assets/style.css)
+文件：[style.css](../source/app/src/main/assets/style.css)
 
 - CSS 变量：`--paper #f4ebd8`、`--ink #322018`、`--red #8e1835`、`--yellow #f4c331`、`--edge #c88917`。
 - 卡带式 UI：边框、内阴影、螺丝装饰、像素化封面。
@@ -846,7 +893,7 @@ window.Arcade = {
 
 ### 7.1 APK 内资源白名单
 
-[deployment-resources.json](file:///workspace/source/app/src/main/assets/deployment-resources.json) 是设备端唯一可信的资源清单，共 **52 项**：
+[deployment-resources.json](../source/app/src/main/assets/deployment-resources.json) 是设备端唯一可信的资源清单，共 **52 项**：
 
 | 平台 | 数量 | 示例 |
 | --- | --- | --- |
@@ -861,7 +908,7 @@ window.Arcade = {
 
 ### 7.2 构建脚本
 
-[build-production.py](file:///workspace/source/scripts/build-production.py) 不依赖 Gradle：
+[build-production.py](../source/scripts/build-production.py) 不依赖 Gradle：
 
 ```text
 1. 复制 assets → build-production/assets
@@ -884,11 +931,11 @@ window.Arcade = {
 
 | 文件 | 内容 |
 | --- | --- |
-| [NATIVE_CORE_ORIGIN.json](file:///workspace/source/NATIVE_CORE_ORIGIN.json) | FCEUmm（GPL-2.0），commit `e0f3086`，JNA 5.13.0 |
-| [ARCADE_CORE_ORIGIN.json](file:///workspace/source/ARCADE_CORE_ORIGIN.json) | FB Alpha 2012（非商业），commit `0ce3153` |
-| [GBA_CORE_ORIGIN.json](file:///workspace/source/GBA_CORE_ORIGIN.json) | mGBA 0.11-212（MPL-2.0） |
-| [MD_CORE_ORIGIN.json](file:///workspace/source/MD_CORE_ORIGIN.json) | PicoDrive（非商业） |
-| [SFC_CORE_ORIGIN.json](file:///workspace/source/SFC_CORE_ORIGIN.json) | Snes9x 2005 / 2005 Plus（非商业） |
+| [NATIVE_CORE_ORIGIN.json](../source/NATIVE_CORE_ORIGIN.json) | FCEUmm（GPL-2.0），commit `e0f3086`，JNA 5.13.0 |
+| [ARCADE_CORE_ORIGIN.json](../source/ARCADE_CORE_ORIGIN.json) | FB Alpha 2012（非商业），commit `0ce3153` |
+| [GBA_CORE_ORIGIN.json](../source/GBA_CORE_ORIGIN.json) | mGBA 0.11-212（MPL-2.0） |
+| [MD_CORE_ORIGIN.json](../source/MD_CORE_ORIGIN.json) | PicoDrive（非商业） |
+| [SFC_CORE_ORIGIN.json](../source/SFC_CORE_ORIGIN.json) | Snes9x 2005 / 2005 Plus（非商业） |
 
 所有内核均固定：
 
@@ -898,12 +945,12 @@ window.Arcade = {
 
 ### 7.4 许可证要点
 
-- 项目原创代码：MIT（[LICENSE](file:///workspace/source/LICENSE)）。
+- 项目原创代码：MIT（[LICENSE](../source/LICENSE)）。
 - 前端：JSNES（Apache-2.0）、core-js（MIT）、Noto Sans SC（OFL）。
 - 原生：FCEUmm（GPL-2.0，组合产物需遵守 GPL）、mGBA（MPL-2.0）、FB Alpha/PicoDrive/Snes9x（**非商业条款**）。
 - 游戏 ROM/BIOS：不纳入开源许可，仓库与 Release 源码包均不包含。
 
-详见 [THIRD_PARTY_NOTICES.md](file:///workspace/source/THIRD_PARTY_NOTICES.md)。
+详见 [THIRD_PARTY_NOTICES.md](../source/THIRD_PARTY_NOTICES.md)。
 
 ---
 
@@ -1347,8 +1394,8 @@ ROM 运行时二次校验（NativeNes 载入前 fileDigest）
 
 ### 14.3 修改 UI
 
-- 所有页面集中在 [app.js](file:///workspace/source/app/src/main/assets/app.js) 的 `renderXxx()` 函数；新增动作需同时注册到 `action()` 与 `uiKey()`。
-- 样式在 [style.css](file:///workspace/source/app/src/main/assets/style.css)；注意保留 `@supports not (display:grid)` 回退与 800px 断点。
+- 所有页面集中在 [app.js](../source/app/src/main/assets/app.js) 的 `renderXxx()` 函数；新增动作需同时注册到 `action()` 与 `uiKey()`。
+- 样式在 [style.css](../source/app/src/main/assets/style.css)；注意保留 `@supports not (display:grid)` 回退与 800px 断点。
 - 焦点可用性依赖 `data-focus` 属性，新增交互控件需提供唯一键。
 
 ### 14.4 发布新版本
@@ -1372,7 +1419,7 @@ ROM 运行时二次校验（NativeNes 载入前 fileDigest）
 
 ### 15.2 仓库完整性
 
-本仓库为审阅副本，缺少以下构建必需项（见 [源码范围与构建状态.md](file:///workspace/source/源码范围与构建状态.md)）：
+本仓库为审阅副本，缺少以下构建必需项（见 [源码范围与构建状态.md](../source/源码范围与构建状态.md)）：
 
 - `assets/vendor/`（JSNES、polyfills）
 - `assets/arcade|gba|md|sfc/player.html`
@@ -1400,3 +1447,191 @@ ROM 运行时二次校验（NativeNes 载入前 fileDigest）
 - 自动化只验证"安装 + 页面可见"；声音、流畅度、实体手柄、全部游戏需实机确认。
 - 模拟器传输测试（52 项资源、备份恢复、中断回滚）在 Android 30 ARM64 上完成，不能替代 32 位真机运行测试。
 - 跨内核（JSNES ↔ FCEUmm、不同 Snes9x 变体）的即时存档不可互换；代码中通过 `engine` 字段显式拒绝。
+
+---
+
+## 16. 附录：速查表
+
+### 16.1 术语表
+
+| 术语 | 含义 | 在本项目中的位置 |
+| --- | --- | --- |
+| ROM | 游戏镜像文件 | 街机 `.zip`、GBA `.gba`、MD `.md`、SFC `.sfc`、NES `.nes` |
+| BIOS | 街机/主机系统固件 | 部分 NeoGeo、PGM 游戏需要 `neogeo.zip`、`pgm.zip` |
+| Core / 内核 | Libretro 规范实现的模拟器动态库 | `libarcade.so`、`libmgba.so`、`libpicodrive.so`、`libsnes9x2005*.so` |
+| JNI / JNA | Java 调用本地代码的两种方式 | 项目使用 JNA 5.13.0，避免自行编写 JNI 胶水层 |
+| Provider 通道 | 通过 `ContentProvider` 传输资源的正式版协议 | `DeploymentProvider` + `release_transport.py` |
+| Legacy 通道 | 通过 `adb push` + `run-as` 的调试传输方式 | `ResourceTool` + `Client.install_pack()` |
+| 电池存档 | 游戏自身产生的 SRAM/Flash 存档 | NES `files/nes/<hash>.srm`；GBA/MD/SFC `battery:<hash>` |
+| 即时存档 | 模拟器完整运行状态快照 | `slot:<hash>:<0-3>`，由 `engine` 字段限定内核 |
+| Manifest | 资源包内的文件清单 | `game-pack/manifest.json` |
+| Release catalog | 发布时注入的游戏目录 | `release-catalog.json` → 构建生成 `catalog.js` |
+| ABI | CPU 指令集 | 仅 `armeabi-v7a`（32 位 ARM） |
+| 页面健康 | WebView 前端通过 HTTP 报告的就绪状态 | `health_at` 新鲜度 ≤5 秒 |
+
+### 16.2 数据格式速查
+
+| 文件 / 键 | 位置 | 格式与关键字段 | 主要读写方 |
+| --- | --- | --- | --- |
+| `deployment.json` | 电脑端 `~/.config/childhood-arcade/` | `apk{path,sha256}`、`game_pack_manifest`、`transport`、`target{serial,identity,model}`、`pending_serial`、`expected_model`、`adb`、`last_install` | `deployment.py` / `prepare_bundle.py` / `setup_release.py` |
+| `manifest.json` | 资源包 `game-pack/` | `schema:1`、`files:[{name,path,bytes,sha256}]` | `resources.read_pack()` / `ResourceTool` |
+| `release.json` | Skill `assets/` | `schema:1`、`version`、`tag`、`transport`、`apk{filename,sha256,bytes}`、`game_pack{...}`、`repository` | `setup_release.py` / `fetch_verified.py` |
+| `prefs` | `files/store/prefs.json` | `volume`、`scale`、`welcome`、`favorites[]`、`recent[]`、`homeOrder[]` | `app.js` |
+| `slot:<hash>:<0-3>` | `files/store/` | `schema:1`、`engine`、`hash`、`frames`、`state{format,data,bytes,sha256}` | `multi-engine.js` / `native-nes.js` |
+| `battery:<hash>` | `files/store/` | `schema:1`、`format`、`engine`、`hash`、`bytes`、`sha256`、`data` | `NativeNes` / `multi-engine.js` |
+| `rom:<hash>` | WebView Store | Base64 编码的用户导入 NES ROM | `app.js` |
+| 用户备份 JSON | 用户选择的位置 | `schema:1`、`app:"childhood-arcade"`、`created`、`entries:[{key,value}]` | `app.js` 导出/恢复 |
+| Provider 备份 ZIP | 电脑端指定路径 | 条目白名单：`store/prefs.json`、`store/slot:<64hex>:<0-3>.json`、`store/battery:<64hex>.json`、`nes/<64hex>.srm` | `release_transport.py` |
+
+> 即时存档的 `state.format` 与内核绑定：`libretro-base64`、`fbneo-base64`、`mgba-base64`、`picodrive-base64`、`snes9x-base64`。`engine` 或 `hash` 不匹配时直接拒绝恢复。
+
+### 16.3 限额与配额
+
+| 项目 | 上限 | 实现位置 |
+| --- | --- | --- |
+| 单个下载文件 | 2 GiB | `fetch_verified.py` |
+| 资源包解压总量 | 2 GiB / 5000 个文件 | `prepare_bundle.py` |
+| 单个资源文件 | 256 MiB | `resources.py` / `ResourceTool` |
+| 资源名 | `[a-z0-9-]{1,60}.(zip\|gba\|md\|sfc)` | `resources.py` |
+| 资源白名单 | 52 项 | `deployment-resources.json` |
+| NES ROM | 8 MiB | `MainActivity.readAsset()` / `NativeNes.load()` |
+| SFC ROM | 16 MiB | `NativeNes.loadExternal()` |
+| WebView 单值存储 | 32 MiB（字符） | `MainActivity.writeStore()` |
+| WebView 批量写入 | 1000 条 | `MainActivity.writeBatch()` |
+| NES 即时存档字符串 | 12 MB | `native-nes.js` |
+| 外部内核即时存档 | 8 MiB | `multi-engine.js` |
+| 用户导入 NES 文件 | 8 MiB | `app.js importGames()` |
+| 用户备份 JSON | 50 MiB | `app.js restoreBackup()` |
+| Provider 备份 ZIP | 256 MiB / 1000 条 | `release_transport.py` |
+| 页面健康新鲜度 | 5 秒 | `DeploymentProvider` |
+| 安装后页面等待 | 12 秒 | `deployment.py` |
+| 安装前空间要求 | `max(32 MiB, 解压大小×2 + APK 大小×3)` | `deployment.artifact()` |
+
+### 16.4 平台、内核与按键支持矩阵
+
+| 平台 | 识别函数 | 内核 | 文件后缀 | 资源来源 / 数量 | 电池存档 | 即时存档 format |
+| --- | --- | --- | --- | --- | --- | --- |
+| 红白机 NES | `isNes()` | FCEUmm（JSNES 后备） | `.nes` | APK `roms/`（不在 52 项白名单） | `files/nes/<hash>.srm` | `libretro-base64` |
+| 街机 | `isArcade()` | FB Alpha 2012 | `.zip` | 23 | 无 | `fbneo-base64` |
+| GBA | `isGba()` | mGBA | `.gba` | 12 | `battery:<hash>` | `mgba-base64` |
+| 世嘉 MD | `isMd()` | PicoDrive | `.md` | 8 | `battery:<hash>` | `picodrive-base64` |
+| SFC | `isSfc()` | Snes9x 2005 / 2005 Plus | `.sfc` | 9 | `battery:<hash>` | `snes9x-base64` |
+
+补充：
+
+- `sfc-kirby-superstar.sfc` 使用 `libsnes9x2005.so`（快速版），其余 SFC 使用 `libsnes9x2005plus.so`。
+- 街机部分 NeoGeo / PGM 游戏依赖 `neogeo.zip` / `pgm.zip` BIOS，随资源包提供；缺失时 `retro_load_game` 失败。
+- GBA 仅允许 1P；NES/街机/MD/SFC 原生最多 2P，实际以游戏支持为准。
+
+### 16.5 端到端按键映射
+
+| Android KeyEvent | 前端 index | 说明 |
+| --- | --- | --- |
+| `19` DPAD_UP | `4` | 方向 |
+| `20` DPAD_DOWN | `5` | 方向 |
+| `21` DPAD_LEFT | `6` | 方向 |
+| `22` DPAD_RIGHT | `7` | 方向 |
+| `96` BUTTON_A | `0` | 平台重映射见下 |
+| `97` BUTTON_B | `1` | 平台重映射见下 |
+| `99` BUTTON_X | `1`；街机/MD/SFC 为 `8` | 平台相关 |
+| `100` BUTTON_Y | `0`；街机/MD/SFC 为 `9` | 平台相关 |
+| `102` BUTTON_L1 | `10` | 与 L2 合并 |
+| `103` BUTTON_R1 | `11` | 与 R2 合并 |
+| `104` BUTTON_L2 | `10` | 与 L1 合并 |
+| `105` BUTTON_R2 | `11` | 与 R1 合并 |
+| `108` BUTTON_START | `3` | START |
+| `109` BUTTON_SELECT | `2` | SELECT |
+| `4` / `82` / `110` | 暂停 | Back / Menu / MODE |
+
+前端 index 进入 `NativeNes.button()` 后按平台查表：
+
+| 平台 | 前端 index → Libretro ID |
+| --- | --- |
+| NES | `{8,0,2,3,4,5,6,7}` |
+| 街机 / SFC | `{0,8,2,3,4,5,6,7,1,9,10,11}` |
+| MD | `{1,0,2,3,4,5,6,7,8,9,10,11}` |
+| GBA | `{8,0,2,3,4,5,6,7,1,9,10,11}` |
+
+`multi-engine.js` 会对 iframe 内核再做一次重映射：GBA 将 `0/1` 映射为 `8/0`；街机将 `0/1` 映射为 `0/8`；MD 将 `0/1/8` 映射为 `1/0/8`。
+
+### 16.6 故障排查 FAQ
+
+| 现象 | 可能原因 | 处理 |
+| --- | --- | --- |
+| `doctor` 找不到电视 | 不同网段、ADB 未开、端口不是 5555、电视休眠 | 确认同一局域网、开启 ADB 调试、`adb connect <ip>:5555` 后重试 |
+| `device_unauthorized` | 电视未确认 RSA 授权 | 在电视弹窗点允许；`adb devices` 显示 `device` 后重跑；`pending_serial` 可复用地址 |
+| `signature_conflict` | 旧调试版/其他签名版本已安装 | 不要直接卸载（会丢存档）；安装官方同签名版本，或用户确认后手动卸载再装 |
+| `insufficient_space` | 剩余空间低于安装峰值 | 清理电视存储；脚本按 `解压×2 + APK×3` 估算 |
+| `backup_failed` | 已有应用无法 `run-as`、页面不可用、备份文件损坏 | 保留旧版本不覆盖；先在游戏厅设置中手动导出备份 |
+| `page_not_visible` | 进程启动但 WebView 未就绪、设备卡顿、前端脚本报错 | 查看 logcat 中 `ArcadeCore`/chromium 日志；确认 `index.html` 与 `catalog.js` 完整 |
+| `installed_unverified` | APK 已安装，但页面健康未确认 | 不要当作安装成功；重跑 `doctor`，检查启动页面与 `health_at` |
+| 启动黑屏/卡顿 | 内核不匹配、ROM 损坏、仅 64 位 ABI、GLES 初始化失败 | 校验 ROM SHA-256；确认设备支持 `armeabi-v7a`；查看 `NativeNes` 日志 |
+| 有画面无声音 | `AudioTrack` 初始化失败、音量 0、电视输出通道错误 | 调高游戏厅音量；检查电视音频输出；重启应用 |
+| 手柄按键无效 | WebView 未聚焦、按键未映射、游戏不支持该键 | 点击画面聚焦；对照 16.5；确认手柄模式与游戏支持 |
+| 存档无法恢复 | `engine`/`hash`/`state.format` 不匹配、文件被修改 | 使用同一内核与游戏版本；跨内核即时存档不保证兼容 |
+| 导入 NES 失败 | 文件超过 8 MiB、缺少 `NES\x1a` 头、重复 ROM | 检查文件大小与格式；重复文件会跳过 |
+| 资源校验失败 | ROM 被替换、下载不完整、清单哈希不一致 | 重新下载资源包；不要手工修改 `manifest.json` |
+| 更新后存档消失 | 签名冲突后手动卸载、恢复覆盖了同名槽位 | 从备份恢复；恢复前确认目标设备与备份内容 |
+
+### 16.7 发布检查清单
+
+- [ ] `AndroidManifest.xml` 的 `versionCode` / `versionName` 已递增。
+- [ ] `release.json` 的 `tag`、文件名、字节数、SHA-256 与实际附件一致。
+- [ ] `deployment-resources.json` 的资源数量与 `manifest.json` 一致（当前 52 项）。
+- [ ] APK 通过 `zipalign -c` 与 `apksigner verify`。
+- [ ] 部署单元测试全部通过（当前 28 项）。
+- [ ] 模拟器/真机完成“安装 → 页面可见 → 启动游戏 → 存档 → 备份 → 恢复”。
+- [ ] `doctor`、`deploy`、`backup`、`restore` 四条主路径均验证。
+- [ ] 至少一台 32 位 ARM 真机验证，不只依赖 64 位模拟器。
+- [ ] 生成并核对 `SHA256SUMS.txt`。
+- [ ] 签名密钥与上一版一致；确认未提交 keystore、密码、Token。
+- [ ] 更新 [1.1 关键事实与来源](#11-关键事实与来源) 与 `docs/` 中受影响的数字。
+
+### 16.8 关键设计取舍
+
+| 决策 | 选择 | 代价 / 边界 |
+| --- | --- | --- |
+| Java 调本地库 | JNA 而非手写 JNI | 少维护一套 NDK 胶水层；反射调用有少量开销，接口需保持稳定 |
+| UI 载体 | 单 Activity + WebView | 前端迭代快、ES5 兼容；大列表与动画性能依赖 WebView，安全面需额外收敛 |
+| 正式版传输 | Provider 取代 legacy | 无需 `run-as` 与 WebView 调试；实现与权限校验更复杂 |
+| 资源分发 | APK 与游戏包分离 | APK 体积可控、资源可独立更新；部署链路与完整性校验更复杂 |
+| 页面组织 | `app.js` 单文件状态机 | 无构建步骤、加载简单；文件较大，修改时需注意 `action()`/`uiKey()` 同步 |
+
+### 16.9 接口索引
+
+| 契约 | 内容 | 位置 |
+| --- | --- | --- |
+| 部署 CLI | `doctor` / `configure` / `deploy` / `backup` / `restore` 等子命令与参数 | [4.1 入口与命令面](#41-入口与命令面) |
+| JS Bridge | `MainActivity.Bridge` 的全部 `@JavascriptInterface` 方法 | [5.1 MainActivity](#51-mainactivity载体与调度中枢) |
+| Provider | `verify` / `install` / `restore` / `health` / `capabilities` | [5.3 DeploymentProvider](#53-deploymentprovider无调试面的传输通道) |
+| iframe 播放器 | `ArcadePlayer` 的 `start/pause/resume/snapshot/restore/...` | [6 WebView 前端](#6-webview-前端javascript) |
+| 资源清单 | `schema` + `files[{name,path,bytes,sha256}]` | [4.7 资源清单与安装](#47-资源清单与安装)、[16.2](#162-数据格式速查) |
+| 备份格式 | 用户 JSON 与 Provider ZIP | [11.3 电视端数据目录](#113-电视端数据目录)、[16.2](#162-数据格式速查) |
+
+### 16.10 文档维护
+
+- 版本升级时先改 [1.1 关键事实与来源](#11-关键事实与来源)，再全文搜索旧数字。
+- 修改代码后运行：
+
+```bash
+cd skills/childhood-arcade-tv
+python3 -m unittest discover -s tests -v
+```
+
+- 提交前检查相对链接是否存在：
+
+```bash
+cd /workspace
+python3 - <<'PY'
+import re
+from pathlib import Path
+doc = Path('docs/CodeWiki.md')
+text = doc.read_text(encoding='utf-8')
+missing = sorted({t for t in re.findall(r'\]\(([^)#]+)', text)
+                  if not t.startswith(('http://', 'https://', '#'))
+                  and not (doc.parent / t).exists()})
+print('缺失链接：', missing or '无')
+PY
+```
+
+- 新增章节时同步更新开头的目录与 [1.2 阅读路线](#12-阅读路线)。
