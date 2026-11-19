@@ -335,6 +335,31 @@ class Client:
                                                           └─> screencap 截图保存
 ```
 
+同一流程的 Mermaid 视图（支持 Mermaid 的渲染器可直接展开）：
+
+```mermaid
+flowchart TD
+  A[读取资源清单] --> B[连接电视]
+  B --> C[设备探测]
+  C -->|型号/身份/SDK 不符| X[停止并报告]
+  C --> D{已有安装}
+  D -->|是| E[备份]
+  D -->|否| F{APK 哈希相同}
+  E --> F
+  F -->|是| G[跳过安装]
+  F -->|否| H{空间足够}
+  H -->|否| X
+  H -->|是| I[adb install]
+  I -->|签名冲突/失败| X
+  I --> J[pm path 复核]
+  G --> K[安装资源]
+  J --> K
+  K --> L[启动 Activity]
+  L --> M{12 秒内页面健康}
+  M -->|是| N[installed_verified]
+  M -->|否| O[installed_unverified]
+```
+
 注意：`report['physical_gameplay_verified']` 与 `report['audio_listening_verified']` 始终为 `False`——**自动化不宣称实体手柄、声音、流畅度通过**。
 
 ### 4.6 下载与准备
@@ -662,6 +687,24 @@ name.endsWith(".sfc") -> files/sfc/roms/<name>
 4. 原目录 -> *.restore.previous；stage -> 正式目录
 5. 删除 journal 与 previous
 失败：按 journal 回滚；进程重启时 onCreate -> recoverRestore() 继续处理
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> Copy
+  Copy: 复制现有 store/nes 到 stage
+  Copy --> Extract
+  Extract: 解压备份到 stage
+  Extract --> Journal
+  Journal: 写 restore.journal
+  Journal --> Swap
+  Swap: 原目录转 previous，stage 转正式目录
+  Swap --> Done
+  Done: 删除 journal 与 previous
+  Done --> [*]
+  Swap --> Rollback: 失败
+  Rollback: 按 journal 回滚
+  Rollback --> [*]
 ```
 
 ### 5.4 `ResourceTool`：legacy 模式的资源 CLI
@@ -1091,6 +1134,20 @@ prepare_bundle.py→ deployment, resources
 tv.py            → deployment
 ```
 
+```mermaid
+graph LR
+  TV[tv.py] --> DEP[deployment.py]
+  SETUP[setup_release.py] --> FETCH[fetch_verified.py]
+  SETUP --> PREP[prepare_bundle.py]
+  SETUP --> DEP
+  PREP --> DEP
+  PREP --> RES[resources.py]
+  DEP --> WEB[webview.py]
+  DEP --> RES
+  DEP -. provider .-> TRANS[release_transport.py]
+  RES -. provider .-> TRANS
+```
+
 ### 9.2 Python 依赖
 
 全部为**标准库**，无 `pip` 依赖：
@@ -1370,6 +1427,34 @@ ROM 运行时二次校验（NativeNes 载入前 fileDigest）
 - 不同内核/不同游戏版本的即时存档不保证互通。
 - 不保证所有品牌电视、手柄、智能体可用。
 
+### 13.4 威胁模型与信任边界
+
+**需要保护的资产**：电视端存档与备份、ROM/BIOS、APK 签名密钥、电视与电脑本身、用户局域网。
+
+**信任边界**：
+
+| 边界 | 跨越的数据 | 主要控制 |
+| --- | --- | --- |
+| Release 下载 → 电脑 | APK、资源包 | 强制 HTTPS、2 GiB 上限、流式 SHA-256、临时文件原子替换 |
+| 电脑 → 电视 | 资源 ZIP、备份 ZIP | ADB 目标绑定、暂存路径白名单、设备端二次哈希 |
+| Provider → 应用 | 资源/备份文件 | `DUMP` 权限、调用 UID ∈ {2000, 0}、方法白名单 |
+| WebView → Java | Bridge 调用 | 参数校验、资源名映射、存储键白名单、JSON 大小限制 |
+| 备份 ZIP → 文件系统 | 存档文件 | 条目白名单、去重、≤1000 项、≤256 MiB、journal 事务 |
+| 资源包 → 运行时 | ROM/BIOS | manifest 哈希、设备端校验、载入前 `fileDigest` 二次校验 |
+
+**攻击者能力与残余风险**：
+
+| 攻击者 | 可能能力 | 现有缓解 | 残余风险 |
+| --- | --- | --- | --- |
+| 局域网 ADB 攻击者 | 连接 5555、调用 Provider | 需要 `DUMP` 权限且 UID 为 shell/root；只暴露安装/恢复方法 | 暴露在不可信网络时仍可替换资源；应仅在可信局域网开启 ADB |
+| 恶意备份 ZIP | 构造条目覆盖存档 | 白名单、大小限制、去重、恢复 journal | 可覆盖同名存档；恢复前应确认备份来源 |
+| 恶意资源包 | 替换 ROM/BIOS | 清单哈希、设备端哈希、运行时二次校验 | 能改写电脑端文件的人可同时改写清单与包 |
+| 被篡改的 Release | 替换 APK/资源附件 | `release.json` 双哈希、`SHA256SUMS.txt` | 哈希与附件同源被篡改时无法自证，依赖发布渠道可信 |
+| 恶意网页 | 诱导 WebView 外跳或注入 | WebView 拦截所有 http(s)，只加载本地资源 | WebView 自身 0day 不在防护范围 |
+| 物理接触 / root | 直接读取 `files/` | Android 应用沙箱 | root 设备无法保证存档机密性 |
+
+**安全不变量**：不自动卸载、不把“页面可见”当作完整验收、不把完整性校验等同于来源可信。签名密钥泄露视为供应链失守，必须轮换并公告。
+
 ---
 
 ## 14. 二次开发指南
@@ -1608,7 +1693,92 @@ ROM 运行时二次校验（NativeNes 载入前 fileDigest）
 | 资源清单 | `schema` + `files[{name,path,bytes,sha256}]` | [4.7 资源清单与安装](#47-资源清单与安装)、[16.2](#162-数据格式速查) |
 | 备份格式 | 用户 JSON 与 Provider ZIP | [11.3 电视端数据目录](#113-电视端数据目录)、[16.2](#162-数据格式速查) |
 
-### 16.10 文档维护
+完整签名、参数与返回见 [16.10 接口契约速查](#1610-接口契约速查)。
+
+### 16.10 接口契约速查
+
+#### JS Bridge（24 个方法）
+
+| 分类 | 方法 | 参数 → 返回 |
+| --- | --- | --- |
+| 能力探测 | `nativeNesAvailable()` | `→ boolean` |
+| 原生启动 | `nativeNesStart(data, hash)` | Base64 NES ROM + 哈希 → result JSON |
+| 原生启动 | `nativeSfcStart(name, hash)` / `nativeMdStart(name, hash)` / `nativeGbaStart(name, hash)` / `nativeArcadeStart(name, hash)` | 资源名 + 哈希 → result JSON |
+| 会话控制 | `nativeNesPause()` / `nativeNesResume()` / `nativeNesClose()` / `nativeNesRelease()` | `→ void` |
+| 输入 | `nativeNesButton(player, button, down)` | 玩家 1–2、前端 index 0–11、按下/抬起 → `void` |
+| 音频 | `nativeNesVolume(value)` | 0–1 → `void` |
+| 画面 | `nativeNesBounds(left, top, width, height, viewportWidth, viewportHeight)` | CSS 像素 → `void` |
+| 存档 | `nativeNesSnapshot()` | `→` 即时存档 JSON |
+| 存档 | `nativeNesRestore(value)` | 即时存档 JSON → result JSON |
+| 截图 | `nativeNesImage()` | `→` `data:image/png;base64,...` |
+| 状态 | `nativeNesStats()` | `→` `{engine, running, loaded, frames, fps, targetFps, audioFrames, presentedFrames, error, ...}` |
+| 资源 | `readAsset(path)` | 仅 `roms/[a-z0-9-]+\.nes`，≤8 MiB → Base64 或 `null` |
+| 存储 | `readStore(key)` / `writeStore(key, value)` | 单值 ≤32 MiB；写入必须是合法 JSON |
+| 存储 | `listStoreKeys()` | `→` JSON 数组 |
+| 批量存储 | `writeBatch(json)` | ≤1000 条；键白名单；目录级原子替换 → `boolean` |
+| 应用 | `finishApp()` | 关闭当前 Activity |
+| 备份 | `exportBackup(json)` | ≤50 MiB；打开 SAF 创建文档 |
+
+单值读写的键只要求匹配 `[a-z0-9:_-]{1,160}`；**备份/批量写入**的键白名单为 `prefs`、`slot:[a-f0-9]{64}:[0-3]`、`battery:[a-f0-9]{64}`。`readAsset` 只服务 APK 内置 NES ROM；外部平台 ROM 通过资源包落盘。
+
+#### DeploymentProvider
+
+| method | arg / extras | 行为与返回 |
+| --- | --- | --- |
+| `capabilities` | 无 | `{"protocol":1}` |
+| `health` | 无 | 读取 `health`；`health_at` 超过 5 秒返回 stale 错误 |
+| `verify` | `arg=name`，`extras.sha256` | 按白名单与哈希校验目标文件 |
+| `install` | `arg=name`，`extras.sha256` | 从 `/data/local/tmp/childhood-arcade-<sha256>.zip` 原子安装 |
+| `restore` | `arg=sha256` | 从 `/data/local/tmp/childhood-arcade-backup-<sha256>.zip` 恢复 |
+
+调用前置条件：调用 UID ∈ {2000, 0}，且持有 `android.permission.DUMP`。`query/insert/delete/update` 一律拒绝；`openFile` 只允许 `content://…/backup` 的只读模式。
+
+#### iframe `ArcadePlayer`
+
+| 方法 | 签名 | 说明 |
+| --- | --- | --- |
+| `start` | `start(game, battery) → Promise` | 加载 ROM 与电池存档 |
+| `pause` / `resume` | `→ void` | 暂停/恢复 |
+| `input` | `input(playerIndex, libretroId, down) → void` | 玩家索引从 0 开始，按键为 Libretro ID |
+| `snapshot` | `→ Uint8Array` | 导出即时存档字节 |
+| `restore` | `restore(bytes) → Promise` | 导入即时存档字节 |
+| `setFrames` | `setFrames(frames) → void` | 恢复帧计数 |
+| `setVolume` | `setVolume(0..1) → void` | 音量 |
+| `image` | `→ dataURL` | 截图 |
+| `dispose` | `→ void` | 释放 iframe 内资源 |
+
+### 16.11 兼容性与迁移
+
+| 对象 | 兼容条件 | 不兼容时的行为 |
+| --- | --- | --- |
+| 即时存档 | `engine` 等于当前 `engineId`、`hash` 相同、`state.format` 匹配、`bytes/sha256` 校验通过 | 拒绝恢复，当前进度不变 |
+| 电池存档 | `engine`/`hash`/`format` 一致 | 拒绝载入；旧版更小的 GBA 存档会扩展到 128 KiB（不足补 `0xFF`） |
+| 用户备份 JSON | `schema:1`、条目键在白名单内 | `writeBatch` 整体失败，旧 `store/` 保留 |
+| Provider 备份 ZIP | 条目白名单、≤1000 项、≤256 MiB、事务提交 | 回滚到恢复前目录 |
+| APK 升级 | 同包名、同签名、`versionCode` 递增 | 签名冲突时停止，不自动卸载 |
+| 资源包升级 | 文件名与 SHA-256 匹配新清单 | 已存在不同内容时拒绝覆盖 |
+| 签名密钥 | 与已安装版本一致 | 轮换需先卸载（会丢存档），或继续使用旧密钥 |
+| ABI | `armeabi-v7a` | 仅 64 位设备无法加载原生内核 |
+
+推荐迁移步骤：先在旧版本导出备份 → 安装新版本 → 在设置中恢复备份。不要用“卸载再安装”处理签名冲突，除非确认可以放弃电视端存档。
+
+### 16.12 贡献指南
+
+- Python：3.9+，只使用标准库，不新增 `pip` 依赖；异常统一收敛为 `DeploymentError`。
+- Java：`-source 8 -target 8`、`minSdk 23`；不使用 Gradle，构建入口是 [build-production.py](../source/scripts/build-production.py)。
+- 前端：ES5 语法、无构建步骤；不引入运行时 CDN；新增动作同时更新 `action()` 与 `uiKey()`。
+- 原生库：仅 `armeabi-v7a`；新增内核需记录来源、许可证与哈希。
+- 测试门槛：
+  - `python3 -m unittest discover -s tests -v` 全绿。
+  - 至少验证一条“安装 → 启动 → 存档 → 备份 → 恢复”链路。
+  - 前端改动需在浏览器预览并验证 800px 断点与键盘焦点。
+- 提交前：
+  - 更新 [1.1 关键事实与来源](#11-关键事实与来源) 中受影响的数字。
+  - 运行 16.13 的链接检查。
+  - 不提交 keystore、密码、Token、构建产物。
+- 提交信息建议使用 `feat:`、`fix:`、`docs:`、`test:` 前缀。
+
+### 16.13 文档维护
 
 - 版本升级时先改 [1.1 关键事实与来源](#11-关键事实与来源)，再全文搜索旧数字。
 - 修改代码后运行：
