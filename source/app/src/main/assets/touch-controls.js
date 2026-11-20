@@ -14,6 +14,37 @@
     md:{grid:'six',buttons:[{i:0,t:'A'},{i:1,t:'B'},{i:8,t:'C'},{i:9,t:'X'},{i:10,t:'Y'},{i:11,t:'Z'}]},
     arcade:{grid:'six',coin:true,buttons:[{i:0,t:'A'},{i:1,t:'B'},{i:8,t:'X'},{i:9,t:'Y'},{i:10,t:'L'},{i:11,t:'R'}]}
   };
+  /* 连发键：虚拟动作码 100+核心按键，按住时以 100ms 间隔自动交替按下/松开。 */
+  var turboEnabled=false,turboTimers={},turboHeld={};
+  function fireTurbo(base){
+    turboHeld[base]=!turboHeld[base];
+    if(handler)handler(base,turboHeld[base]);
+  }
+  function pressTurbo(base){
+    var key=100+base;
+    counts[key]=(counts[key]||0)+1;
+    paintAction(key);
+    if(counts[key]>1)return;
+    turboHeld[base]=false;
+    if(turboTimers[base])clearInterval(turboTimers[base]);
+    fireTurbo(base);
+    turboTimers[base]=setInterval(function(){fireTurbo(base);},100);
+  }
+  function releaseTurbo(base){
+    var key=100+base;
+    if(!counts[key])return;
+    counts[key]--;
+    paintAction(key);
+    if(counts[key]>0)return;
+    if(turboTimers[base]){clearInterval(turboTimers[base]);delete turboTimers[base];}
+    if(turboHeld[base]){turboHeld[base]=false;if(handler)handler(base,false);}
+  }
+  function stopTurbo(){
+    for(var k in turboTimers)clearInterval(turboTimers[k]);
+    turboTimers={};
+    for(var b in turboHeld)if(turboHeld[b]&&handler)handler(Number(b),false);
+    turboHeld={};
+  }
   function make(tag,cls,text){var el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el;}
   function paintAction(action){
     var el=btns[action];
@@ -22,12 +53,14 @@
     else el.className=el.className.replace(/\s*pressed/g,'');
   }
   function press(action){
+    if(action>=100)return pressTurbo(action-100);
     if(action<0||action>11)return;
     counts[action]++;
     if(counts[action]===1&&handler)handler(action,true);
     paintAction(action);
   }
   function release(action){
+    if(action>=100)return releaseTurbo(action-100);
     if(action<0||action>11||counts[action]<1)return;
     counts[action]--;
     if(counts[action]===0&&handler)handler(action,false);
@@ -71,7 +104,7 @@
       var value=node.getAttribute&&node.getAttribute('data-tc');
       if(value!==null&&value!==undefined&&value!=='pad'){
         var action=Number(value);
-        if(!isNaN(action)&&action>=0&&action<=11)return action;
+        if(!isNaN(action)&&action>=0&&(action<=11||(action>=100&&action<=101)))return action;
       }
       node=node.parentNode;
     }
@@ -102,12 +135,16 @@
     setPadMask(mask);
   }
   function releaseAll(){
+    stopTurbo();
     for(var action=0;action<12;action++){
       if(counts[action]>0){
         counts[action]=0;
         if(handler)handler(action,false);
       }
-      paintAction(action);
+    }
+    for(var key in counts){
+      if(counts[key]>0)counts[key]=0;
+      paintAction(key);
     }
     padMask=0;
     touches={};
@@ -118,12 +155,13 @@
     }
   }
   function addAction(box,item,extra){
+    var key=item.turbo?100+item.i:item.i;
     var el=make('div','tc-btn '+(extra||''),item.t);
-    el.setAttribute('data-tc',String(item.i));
+    el.setAttribute('data-tc',String(key));
     el.setAttribute('role','button');
     el.setAttribute('aria-label',item.t);
     box.appendChild(el);
-    btns[item.i]=el;
+    btns[key]=el;
   }
   /* 自定义布局：按屏幕比例定位每组按键，缩放不改变触控语义。 */
   function applyLayout(){
@@ -142,6 +180,8 @@
   }
   function build(kind){
     var spec=LAYOUTS[kind]||LAYOUTS.nes;
+    stopTurbo();
+    if(kind==='nes'&&turboEnabled)spec={grid:'four',buttons:[{i:0,t:'X',turbo:1},{i:1,t:'Y',turbo:1},{i:1,t:'B'},{i:0,t:'A'}]};
     root.innerHTML='';root.setAttribute('data-layout',kind);
     btns={};padEl=null;
     var left=make('div','tc-zone tc-left');
@@ -226,6 +266,12 @@
       kind=kind||'nes';
       if(layout===kind)return;
       releaseAll();layout=kind;build(kind);
+    },
+    setTurbo:function(on){
+      on=!!on;
+      if(on===turboEnabled)return;
+      turboEnabled=on;
+      if(layout){releaseAll();build(layout);}
     },
     setVisible:function(value){
       value=!!value;
