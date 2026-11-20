@@ -61,7 +61,7 @@ public final class NativeNes {
     private volatile long frames=0,resumeFrames=0,resumeTime=0,audioFrames=0,drawFrames=0,lateFrames=0;
     private volatile double cpuMs=0,fps=60.0988;
     private String hash=null,error=null,engineId=ENGINE,library="libfceumm.so",loadedLibrary=null;
-    private boolean arcade=false,handheld=false,megadrive=false,superNintendo=false;
+    private volatile boolean arcade=false,handheld=false,megadrive=false,superNintendo=false;
     private final java.util.HashMap<String,Memory> coreOptions=new java.util.HashMap<String,Memory>();
     private float volume=.7f;
     private int pixelFormat=0,sampleRate=48000;

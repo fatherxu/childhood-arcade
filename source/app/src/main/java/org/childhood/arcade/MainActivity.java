@@ -134,7 +134,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 if("http".equals(scheme)||"https".equals(scheme))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));
                 return null;
             }
-            @Override public void onPageFinished(WebView v,String url){hideSystemUI();if(url.equals("https://appassets.androidplatform.net/assets/index.html"))getSharedPreferences("deployment",0).edit().putBoolean("page_loaded",true).apply();}
+            @Override public void onPageFinished(WebView v,String url){hideSystemUI();if(url.equals("https://appassets.androidplatform.net/assets/index.html"))getSharedPreferences("deployment",0).edit().putBoolean("page_loaded",true).apply();resyncPlayers();}
         });
         web.setWebChromeClient(new WebChromeClient(){
             @Override public boolean onShowFileChooser(WebView v,ValueCallback<Uri[]> callback,FileChooserParams params){
@@ -159,6 +159,8 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     }
     private void hideSystemUI(){getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE);}
     private void js(final String value){if(web!=null)web.post(new Runnable(){public void run(){if(web!=null)web.evaluateJavascript("if(window.Arcade){"+value+"}",null);}});}
+    /** WebView reloads (for example after restoring a phone backup) drop JS state; replay the live pad slots. */
+    private void resyncPlayers(){for(Map.Entry<Integer,Integer> entry:players.entrySet())js("Arcade.nativeRegister("+entry.getKey()+","+entry.getValue()+")");}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)hideSystemUI();}
     @Override protected void onResume(){super.onResume();pageActive=true;}
     @Override protected void onPause(){pageActive=false;if(nativeNes!=null)nativeNes.pause();super.onPause();js("Arcade.lifecyclePause()");}
@@ -296,7 +298,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             else js("Arcade.nativeKey("+action+",false,"+id+",true,false,-1)");
         }
     }
-    @Override public void onInputDeviceAdded(int id){releasePad(id);padStates.remove(id);axes.remove(id);}
+    @Override public void onInputDeviceAdded(int id){releasePad(id);padStates.remove(id);axes.remove(id);players.remove(id);}
     @Override public void onInputDeviceChanged(int id){releasePad(id);PadState old=padStates.remove(id);if(old!=null){old.sampleStart=0;old.maxX=0;old.maxY=0;}}
     @Override public void onInputDeviceRemoved(int id){InputDevice device=InputDevice.getDevice(id);if(captureKey!=null&&(device==null||captureKey.equals(gamepads.key(device))))clearCapture(true);releasePad(id);axes.remove(id);padStates.remove(id);Integer p=players.remove(id);if(p!=null&&p>0&&nativeNes!=null&&nativeNes.isRunning())nativeNes.pause();js("Arcade.nativeDisconnected("+id+")");}
     private static final class PadState {
@@ -717,6 +719,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             File temp=lanTempFile;lanTempFile=null;
             if(temp!=null)temp.delete();
         }
+        js("Arcade.remoteReset()");
     }
     private void lanAccept(ServerSocket server){
         while(!server.isClosed()){
@@ -1026,7 +1029,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         +"document.addEventListener('visibilitychange',function(){if(document.hidden)releaseAll();else if(ready)claim(P).catch(function(){});});"
         +"window.addEventListener('pagehide',releaseAll);"
         +"claim(wanted).catch(function(){});"
-        +"setInterval(function(){if(!ready){claim(wanted).catch(function(){});return;}fetch('/ping/'+T+'?c='+C,{cache:'no-store'}).then(function(r){if(r.status===410){ready=false;releaseAll();status('正在重新连接…',true);claim(wanted).catch(function(){});return;}if(!r.ok)throw new Error('http');offline=false;}).catch(function(){if(!ready)return;offline=true;status('已断开',true);releaseAll();});},2000);"
+        +"setInterval(function(){if(!ready){claim(wanted).catch(function(){});return;}fetch('/ping/'+T+'?c='+C,{cache:'no-store'}).then(function(r){if(r.status===410){ready=false;releaseAll();status('正在重新连接…',true);claim(wanted).catch(function(){});return;}if(!r.ok)throw new Error('http');if(offline){offline=false;status('已连接 · '+(P===1?'1P':'2P'),false);}}).catch(function(){if(!ready)return;offline=true;status('已断开',true);releaseAll();});},2000);"
         +"})();</script></body></html>";
     private static final String RESTORE_PAGE="<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
         +"<meta name='viewport' content='width=device-width,initial-scale=1,user-scalable=no'>"
