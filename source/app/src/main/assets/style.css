@@ -47,17 +47,19 @@ html.native-running body,html.native-running #play-screen{background:transparent
 .tc-left{left:2.4vmin}
 .tc-right{right:2.4vmin;flex-direction:column;align-items:flex-end}
 .tc-center{left:50%;transform:translateX(-50%)}
-.tc-dpad{position:relative;width:36vmin;height:36vmin;max-width:172px;max-height:172px;border-radius:20%;background:rgba(20,17,13,.38);border:2px solid rgba(244,235,216,.34);pointer-events:auto;opacity:.74}
-.tc-dpad:before,.tc-dpad:after{content:'';position:absolute;background:rgba(244,235,216,.16);border-radius:8%}
-.tc-dpad:before{left:32%;top:5%;width:36%;height:90%}
-.tc-dpad:after{top:32%;left:5%;height:36%;width:90%}
-.tc-hub{position:absolute;left:41%;top:41%;width:18%;height:18%;border-radius:50%;background:rgba(244,235,216,.14);border:1px solid rgba(244,235,216,.22)}
-.tc-arrow{position:absolute;font-size:3.2vmin;line-height:1;color:rgba(255,243,216,.62);text-shadow:0 1px 2px #000;pointer-events:none}
+.tc-dpad{position:relative;width:30vmin;height:30vmin;max-width:146px;max-height:146px;border-radius:50%;background:radial-gradient(circle at 50% 38%,rgba(20,17,13,.26),rgba(20,17,13,.52));border:2px solid rgba(244,235,216,.26);box-shadow:inset 0 2px 10px rgba(0,0,0,.4),0 2px 8px rgba(0,0,0,.28);pointer-events:auto;opacity:.8}
+.tc-dpad:before,.tc-dpad:after{content:'';position:absolute;background:rgba(244,235,216,.09);border-radius:999px}
+.tc-dpad:before{left:calc(50% - 1.5%);top:13%;width:3%;height:74%}
+.tc-dpad:after{top:calc(50% - 1.5%);left:13%;height:3%;width:74%}
+.tc-stick{position:absolute;left:50%;top:50%;width:44%;height:44%;border-radius:50%;transform:translate(-50%,-50%);background:radial-gradient(circle at 50% 32%,rgba(255,243,216,.34),rgba(244,235,216,.12) 62%,rgba(244,235,216,.06));border:1px solid rgba(255,243,216,.34);box-shadow:0 3px 7px rgba(0,0,0,.38),inset 0 -2px 6px rgba(0,0,0,.25),inset 0 2px 4px rgba(255,255,255,.12);pointer-events:none;transition:transform .07s linear}
+.tc-dpad.active .tc-stick{transition:none}
+.tc-dpad.active{opacity:.92}
+.tc-arrow{position:absolute;font-size:2.5vmin;line-height:1;color:rgba(255,243,216,.55);text-shadow:0 1px 2px #000;pointer-events:none}
 .tc-arrow.pressed{color:var(--yellow);text-shadow:0 0 8px #f4c331}
-.tc-arrow-up{top:4%;left:50%;transform:translateX(-50%)}
-.tc-arrow-down{bottom:4%;left:50%;transform:translateX(-50%)}
-.tc-arrow-left{left:4%;top:50%;transform:translateY(-50%)}
-.tc-arrow-right{right:4%;top:50%;transform:translateY(-50%)}
+.tc-arrow-up{top:6%;left:50%;transform:translateX(-50%)}
+.tc-arrow-down{bottom:6%;left:50%;transform:translateX(-50%)}
+.tc-arrow-left{left:6%;top:50%;transform:translateY(-50%)}
+.tc-arrow-right{right:6%;top:50%;transform:translateY(-50%)}
 .tc-buttons{display:flex;gap:2vmin;margin-top:1.2vmin}
 .tc-buttons.tc-four{display:grid;grid-template-columns:repeat(2,auto);gap:1.8vmin}
 .tc-buttons.tc-six{display:grid;grid-template-columns:repeat(3,auto);gap:1.5vmin}
@@ -73,7 +75,7 @@ html.native-running body,html.native-running #play-screen{background:transparent
 .tl-stage{position:relative;flex:1 1 auto;min-height:34vh;border:2px dashed rgba(109,42,42,.35);border-radius:18px;background:repeating-linear-gradient(45deg,rgba(20,17,13,.05) 0 10px,rgba(20,17,13,.02) 10px 20px);overflow:hidden;touch-action:none}
 .tl-group{position:absolute;display:flex;align-items:center;justify-content:center;border-radius:16px;background:rgba(142,24,53,.14);border:2px solid rgba(142,24,53,.4);color:#6d2a2a;font-weight:800;font-size:clamp(12px,1.5vw,19px);white-space:nowrap;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;transform-origin:50% 50%}
 .tl-group.selected{background:rgba(244,195,49,.32);border-color:#a8791a;box-shadow:0 0 0 4px rgba(244,195,49,.3);color:#5a1a12}
-.tl-g-dpad{width:24vmin;height:24vmin;max-width:150px;max-height:150px;border-radius:22%}
+.tl-g-dpad{width:22vmin;height:22vmin;max-width:138px;max-height:138px;border-radius:50%}
 .tl-g-ab{width:26vmin;height:13vmin;max-width:170px;max-height:80px;border-radius:999px}
 .tl-g-pills{width:30vmin;height:8vmin;max-width:190px;max-height:50px;border-radius:999px}
 .tl-g-pause{width:16vmin;height:7vmin;max-width:110px;max-height:44px;border-radius:12px}

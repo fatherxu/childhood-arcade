@@ -77,6 +77,25 @@
     }
     return -1;
   }
+  /* 摇杆视觉：只移动中间球，方向判定仍按触点位置。 */
+  function moveStick(x,y){
+    if(!padEl)return;
+    var stick=padEl.querySelector('.tc-stick');
+    if(!stick)return;
+    var r=padEl.getBoundingClientRect();
+    if(!r.width)return;
+    var nx=(x-(r.left+r.width/2))/(r.width/2),ny=(y-(r.top+r.height/2))/(r.height/2),len=Math.sqrt(nx*nx+ny*ny);
+    if(len>1){nx/=len;ny/=len;}
+    stick.style.transform='translate(calc(-50% + '+(nx*r.width*.2).toFixed(1)+'px),calc(-50% + '+(ny*r.height*.2).toFixed(1)+'px))';
+    padEl.classList.add('active');
+  }
+  function resetStick(){
+    if(!padEl)return;
+    var stick=padEl.querySelector('.tc-stick');
+    if(stick)stick.style.transform='';
+    padEl.classList.remove('active');
+  }
+  function padTouches(){var n=0;for(var id in touches)if(touches[id]&&touches[id].pad)n++;return n;}
   function recomputePad(){
     var mask=0,id;
     for(id in touches)if(touches[id]&&touches[id].pad)mask|=touches[id].mask||0;
@@ -92,6 +111,7 @@
     }
     padMask=0;
     touches={};
+    resetStick();
     if(padEl){
       var arrows=padEl.getElementsByTagName('span');
       for(var i=0;i<arrows.length;i++)arrows[i].className=arrows[i].className.replace(/\s*pressed/g,'');
@@ -135,7 +155,7 @@
       arrow.setAttribute('data-act',String(arrows[i][1]));
       padEl.appendChild(arrow);
     }
-    padEl.appendChild(make('span','tc-hub'));
+    padEl.appendChild(make('span','tc-stick'));
     left.appendChild(padEl);root.appendChild(left);
     var right=make('div','tc-zone tc-right');
     if(spec.shoulders){
@@ -162,6 +182,7 @@
       var touch=list[i],target=touch.target||event.target,id=touch.identifier;
       if(findPad(target)){
         touches[id]={pad:true,mask:padMaskAt(touch.clientX,touch.clientY)};
+        moveStick(touch.clientX,touch.clientY);
         recomputePad();
       }else{
         var action=findButton(target);
@@ -177,6 +198,7 @@
       var touch=list[i],record=touches[touch.identifier];
       if(!record||!record.pad)continue;
       var mask=padMaskAt(touch.clientX,touch.clientY);
+      moveStick(touch.clientX,touch.clientY);
       if(mask!==record.mask){record.mask=mask;changed=true;}
     }
     if(changed)recomputePad();
@@ -188,7 +210,7 @@
       var touch=list[i],record=touches[touch.identifier];
       if(!record)continue;
       delete touches[touch.identifier];
-      if(record.pad)recomputePad();else release(record.action);
+      if(record.pad){recomputePad();if(!padTouches())resetStick();}else release(record.action);
     }
   }
   root.addEventListener('touchstart',start,false);
