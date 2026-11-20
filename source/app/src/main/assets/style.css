@@ -68,6 +68,18 @@ html.native-running body,html.native-running #play-screen{background:transparent
 .tc-pills{display:flex;gap:2vmin}
 .tc-pill{width:auto;height:8.5vmin;max-height:38px;padding:0 2vmin;border-radius:8px;font-size:3vmin;font-weight:700;letter-spacing:.04em}
 
+/* 屏幕按键布置：拖动预览 + 分组缩放 */
+.touch-layout{display:flex;flex-direction:column;gap:1.2vh;overflow:auto}
+.tl-stage{position:relative;flex:1 1 auto;min-height:34vh;border:2px dashed rgba(109,42,42,.35);border-radius:18px;background:repeating-linear-gradient(45deg,rgba(20,17,13,.05) 0 10px,rgba(20,17,13,.02) 10px 20px);overflow:hidden;touch-action:none}
+.tl-group{position:absolute;display:flex;align-items:center;justify-content:center;border-radius:16px;background:rgba(142,24,53,.14);border:2px solid rgba(142,24,53,.4);color:#6d2a2a;font-weight:800;font-size:clamp(12px,1.5vw,19px);white-space:nowrap;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;transform-origin:50% 50%}
+.tl-group.selected{background:rgba(244,195,49,.32);border-color:#a8791a;box-shadow:0 0 0 4px rgba(244,195,49,.3);color:#5a1a12}
+.tl-g-dpad{width:24vmin;height:24vmin;max-width:150px;max-height:150px;border-radius:22%}
+.tl-g-ab{width:26vmin;height:13vmin;max-width:170px;max-height:80px;border-radius:999px}
+.tl-g-pills{width:30vmin;height:8vmin;max-width:190px;max-height:50px;border-radius:999px}
+.tl-g-pause{width:16vmin;height:7vmin;max-width:110px;max-height:44px;border-radius:12px}
+.tl-tools{display:flex;align-items:center;gap:1.2vw;flex-wrap:wrap}
+.tl-label{margin-left:auto;color:#7a5236;font-size:.82em}
+
 /* Nine platform/library tabs retain legible type on 720p televisions. */
 nav.nav-many button{flex:1 1 auto;white-space:nowrap;padding-left:.25em;padding-right:.25em}
 

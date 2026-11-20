@@ -4,6 +4,7 @@
   var root=document.getElementById('touch-controls');
   if(!root)return;
   var handler=null,layout=null,visible=false,padEl=null,padMask=0;
+  var cfg={},zoneEls={};
   var touches={},counts=[0,0,0,0,0,0,0,0,0,0,0,0],btns={};
   /* 按键索引与手柄一致：A0 B1 SELECT2 START3 UP4 DOWN5 LEFT6 RIGHT7 X8 Y9 L10 R11 */
   var LAYOUTS={
@@ -104,8 +105,23 @@
     box.appendChild(el);
     btns[item.i]=el;
   }
+  /* 自定义布局：按屏幕比例定位每组按键，缩放不改变触控语义。 */
+  function applyLayout(){
+    if(!zoneEls.dpad)return;
+    var fallback={dpad:{x:.15,y:.72,s:1.05},ab:{x:.87,y:.74,s:1.15},pills:{x:.5,y:.9,s:1.1}};
+    for(var key in zoneEls){
+      var el=zoneEls[key],c=cfg[key]||{},d=fallback[key];
+      var x=typeof c.x==='number'?c.x:d.x,y=typeof c.y==='number'?c.y:d.y,s=typeof c.s==='number'?c.s:d.s;
+      el.style.left=(x*100)+'%';
+      el.style.top=(y*100)+'%';
+      el.style.right='auto';
+      el.style.bottom='auto';
+      el.style.transformOrigin='50% 50%';
+      el.style.transform='translate(-50%,-50%) scale('+s+')';
+    }
+  }
   function build(kind){
-    var cfg=LAYOUTS[kind]||LAYOUTS.nes;
+    var spec=LAYOUTS[kind]||LAYOUTS.nes;
     root.innerHTML='';root.setAttribute('data-layout',kind);
     btns={};padEl=null;
     var left=make('div','tc-zone tc-left');
@@ -122,19 +138,21 @@
     padEl.appendChild(make('span','tc-hub'));
     left.appendChild(padEl);root.appendChild(left);
     var right=make('div','tc-zone tc-right');
-    if(cfg.shoulders){
+    if(spec.shoulders){
       var shoulders=make('div','tc-shoulders');
       addAction(shoulders,{i:10,t:'L'},'tc-shoulder');
       addAction(shoulders,{i:11,t:'R'},'tc-shoulder');
       right.appendChild(shoulders);
     }
-    var box=make('div','tc-buttons '+(cfg.grid==='six'?'tc-six':cfg.grid==='four'?'tc-four':'tc-two'));
-    for(var b=0;b<cfg.buttons.length;b++)addAction(box,cfg.buttons[b]);
+    var box=make('div','tc-buttons '+(spec.grid==='six'?'tc-six':spec.grid==='four'?'tc-four':'tc-two'));
+    for(var b=0;b<spec.buttons.length;b++)addAction(box,spec.buttons[b]);
     right.appendChild(box);root.appendChild(right);
     var center=make('div','tc-zone tc-center'),pills=make('div','tc-pills');
-    addAction(pills,{i:2,t:cfg.coin?'投币':'SELECT'},'tc-pill');
+    addAction(pills,{i:2,t:spec.coin?'投币':'SELECT'},'tc-pill');
     addAction(pills,{i:3,t:'START'},'tc-pill');
     center.appendChild(pills);root.appendChild(center);
+    zoneEls={dpad:left,ab:right,pills:center};
+    applyLayout();
   }
   function start(event){
     if(!visible)return;
@@ -192,10 +210,13 @@
       if(value===visible)return;
       if(!value)releaseAll();
       visible=value;root.hidden=!value;
+      if(value)applyLayout();
       document.documentElement.className=document.documentElement.className.replace(/\s*touch-playing/g,'')+(value?' touch-playing':'');
     },
     releaseAll:releaseAll,
     isVisible:function(){return visible;},
+    getConfig:function(){return cfg;},
+    setConfig:function(value){cfg=value||{};applyLayout();},
     capable:function(){return ('ontouchstart' in window)||(navigator.maxTouchPoints||0)>0;}
   };
 }());
