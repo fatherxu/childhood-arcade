@@ -163,7 +163,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private void resyncPlayers(){for(Map.Entry<Integer,Integer> entry:players.entrySet())js("Arcade.nativeRegister("+entry.getKey()+","+entry.getValue()+")");}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)hideSystemUI();}
     @Override protected void onResume(){super.onResume();pageActive=true;}
-    @Override protected void onPause(){pageActive=false;if(nativeNes!=null)nativeNes.pause();super.onPause();js("Arcade.lifecyclePause()");}
+    @Override protected void onPause(){pageActive=false;if(nativeNes!=null)try{nativeNes.pause();}catch(Throwable ignored){}super.onPause();js("Arcade.lifecyclePause()");}
     @Override protected void onDestroy(){lanStop();if(nativeNes!=null){try{nativeNes.close();}catch(RuntimeException e){android.util.Log.w("ArcadeCore","退出时游戏线程未能及时停止",e);}}if(inputs!=null)inputs.unregisterInputDeviceListener(this);uiHandler.removeCallbacks(captureTimeout);if(web!=null){web.removeJavascriptInterface("NativeArcade");web.destroy();web=null;}super.onDestroy();}
     private boolean gamepad(KeyEvent event){
         InputDevice device=InputDevice.getDevice(event.getDeviceId());
@@ -300,7 +300,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     }
     @Override public void onInputDeviceAdded(int id){releasePad(id);padStates.remove(id);axes.remove(id);players.remove(id);}
     @Override public void onInputDeviceChanged(int id){releasePad(id);PadState old=padStates.remove(id);if(old!=null){old.sampleStart=0;old.maxX=0;old.maxY=0;}}
-    @Override public void onInputDeviceRemoved(int id){InputDevice device=InputDevice.getDevice(id);if(captureKey!=null&&(device==null||captureKey.equals(gamepads.key(device))))clearCapture(true);releasePad(id);axes.remove(id);padStates.remove(id);Integer p=players.remove(id);if(p!=null&&p>0&&nativeNes!=null&&nativeNes.isRunning())nativeNes.pause();js("Arcade.nativeDisconnected("+id+")");}
+    @Override public void onInputDeviceRemoved(int id){InputDevice device=InputDevice.getDevice(id);if(captureKey!=null&&(device==null||captureKey.equals(gamepads.key(device))))clearCapture(true);releasePad(id);axes.remove(id);padStates.remove(id);Integer p=players.remove(id);if(p!=null&&p>0&&nativeNes!=null&&nativeNes.isRunning())try{nativeNes.pause();}catch(Throwable ignored){}js("Arcade.nativeDisconnected("+id+")");}
     private static final class PadState {
         final int[] keys=new int[GamepadProfile.COUNT];
         final boolean[] axes=new boolean[GamepadProfile.COUNT];
@@ -663,7 +663,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 }
             }
         }catch(Throwable ignored){}
-        return "127.0.0.1";
+        return null;
     }
     private static boolean lanTokenOk(String value,String token){return value!=null&&token!=null&&value.equals(token);}
     private static String lanParam(String query,String key){
@@ -681,9 +681,11 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         synchronized(lanLock){
             try{
                 if(lanSocket!=null&&!lanSocket.isClosed()){lanRefreshAddress();return lanJson();}
+                String address=lanLocalAddress();
+                if(address==null){try{return new JSONObject().put("running",false).put("error","电视没有连接网络，请先连接 Wi-Fi").toString();}catch(Exception ignored){return "{\"running\":false}";}}
                 ServerSocket server=new ServerSocket(0,16,InetAddress.getByName("0.0.0.0"));
                 String token=lanRandomToken();
-                lanSocket=server;lanToken=token;lanAddress=lanLocalAddress();lanPort=server.getLocalPort();
+                lanSocket=server;lanToken=token;lanAddress=address;lanPort=server.getLocalPort();
                 lanPadUrl="http://"+lanAddress+":"+lanPort+"/pad/"+token;
                 lanBackupUrl="http://"+lanAddress+":"+lanPort+"/backup/"+token;
                 lanRestoreUrl="http://"+lanAddress+":"+lanPort+"/restore/"+token;
@@ -702,7 +704,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private String lanInfoJson(){synchronized(lanLock){if(lanSocket==null||lanSocket.isClosed())return "{\"running\":false}";lanRefreshAddress();return lanJson();}}
     private void lanRefreshAddress(){
         String address=lanLocalAddress();
-        if(address==null||address.length()==0||address.equals(lanAddress))return;
+        if(address==null||address.equals(lanAddress))return;
         lanAddress=address;
         lanPadUrl="http://"+address+":"+lanPort+"/pad/"+lanToken;
         lanBackupUrl="http://"+address+":"+lanPort+"/backup/"+lanToken;
@@ -919,7 +921,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private static void lanWrite(Socket socket,int code,String text){try{lanWriteBytes(socket,code,"text/plain; charset=utf-8",text.getBytes("UTF-8"),null);}catch(IOException ignored){}}
     private static void lanWriteBytes(Socket socket,int code,String type,byte[] body,String filename)throws IOException{
         OutputStream out=socket.getOutputStream();
-        String status=code==200?"OK":code==400?"Bad Request":code==403?"Forbidden":code==404?"Not Found":code==405?"Method Not Allowed":code==413?"Payload Too Large":"Internal Server Error";
+        String status=code==200?"OK":code==400?"Bad Request":code==403?"Forbidden":code==404?"Not Found":code==405?"Method Not Allowed":code==409?"Conflict":code==410?"Gone":code==413?"Payload Too Large":"Internal Server Error";
         StringBuilder head=new StringBuilder("HTTP/1.1 ").append(code).append(' ').append(status).append("\r\n");
         head.append("Content-Type: ").append(type).append("\r\n");
         head.append("Content-Length: ").append(body.length).append("\r\n");
