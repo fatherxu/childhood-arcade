@@ -54,7 +54,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private WebView web;
     private NativeNes nativeNes;
     private ValueCallback<Uri[]> chooser;
-    private String pendingBackup;
+    private volatile String pendingBackup;
     private boolean pageActive=true;
     private InputManager inputs;
     private final HashMap<Integer, boolean[]> axes = new HashMap<Integer, boolean[]>();
@@ -135,6 +135,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 return null;
             }
             @Override public void onPageFinished(WebView v,String url){hideSystemUI();if(url.equals("https://appassets.androidplatform.net/assets/index.html"))getSharedPreferences("deployment",0).edit().putBoolean("page_loaded",true).apply();resyncPlayers();}
+            @Override public boolean onRenderProcessGone(WebView v,android.webkit.RenderProcessGoneDetail detail){if(v!=web)return true;android.util.Log.w("ArcadeWeb","渲染进程已退出，正在重建页面");uiHandler.post(new Runnable(){public void run(){if(isFinishing())return;try{recreate();}catch(Throwable ignored){finish();}}});return true;}
         });
         web.setWebChromeClient(new WebChromeClient(){
             @Override public boolean onShowFileChooser(WebView v,ValueCallback<Uri[]> callback,FileChooserParams params){
@@ -327,7 +328,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             return;
         }
         if(request==PICK_FILE&&chooser!=null){Uri[] uris=null;if(result==RESULT_OK&&data!=null){if(data.getClipData()!=null){int n=data.getClipData().getItemCount();uris=new Uri[n];for(int i=0;i<n;i++)uris[i]=data.getClipData().getItemAt(i).getUri();}else if(data.getData()!=null)uris=new Uri[]{data.getData()};}chooser.onReceiveValue(uris);chooser=null;}
-        if(request==EXPORT_FILE){boolean ok=false;if(result==RESULT_OK&&data!=null&&data.getData()!=null&&pendingBackup!=null){try{OutputStream out=getContentResolver().openOutputStream(data.getData());out.write(pendingBackup.getBytes("UTF-8"));out.close();ok=true;}catch(Exception ignored){}}pendingBackup=null;js("Arcade.backupResult("+ok+")");}
+        if(request==EXPORT_FILE){boolean ok=false;if(result==RESULT_OK&&data!=null&&data.getData()!=null&&pendingBackup!=null){try(OutputStream out=getContentResolver().openOutputStream(data.getData())){if(out!=null){out.write(pendingBackup.getBytes("UTF-8"));ok=true;}}catch(Exception ignored){}}pendingBackup=null;js("Arcade.backupResult("+ok+")");}
     }
     private File keyFile(File dir,String key)throws IOException {if(key==null||!key.matches("[a-z0-9:_-]{1,160}"))throw new IOException("Invalid key");return new File(dir,key+".json");}
     private byte[] readAll(InputStream in,int max)throws IOException{try{ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1){if(out.size()+n>max)throw new IOException("Data too large");out.write(buf,0,n);}return out.toByteArray();}finally{in.close();}}
@@ -1085,7 +1086,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public String nativeNesStart(String data,String hash){return nativeNes.load(data,hash);}
         @JavascriptInterface public void nativeNesPause(){nativeNes.pause();}
         @JavascriptInterface public void nativeNesResume(){nativeNes.resume();}
-        @JavascriptInterface public void nativeNesClose(){try{nativeNes.close();}catch(RuntimeException e){android.util.Log.w("ArcadeCore","游戏线程未能及时停止",e);}}
+        @JavascriptInterface public void nativeNesClose(){nativeNes.close();}
         @JavascriptInterface public void nativeNesButton(int player,int button,boolean down){nativeNes.button(player,button,down);}
         @JavascriptInterface public void nativeNesButtonFrom(String source,int player,int button,boolean down){nativeNes.buttonFrom("js:"+source,player,button,down);}
         @JavascriptInterface public void nativeNesRelease(){nativeNes.releaseAll();}

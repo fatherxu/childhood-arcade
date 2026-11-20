@@ -223,12 +223,13 @@ public final class NativeNes {
         }}catch(Throwable e){error=e.toString();running=false;hide();}
     }
     public void resume(){synchronized(lock){if(!loaded||running)return;releaseAll();track.play();resumeTime=System.nanoTime();resumeFrames=frames;resumePresented=presentedFrames;running=true;}activity.runOnUiThread(new Runnable(){public void run(){view.setVisibility(View.VISIBLE);}});}
-    public void pause(){running=false;synchronized(lock){releaseAll();if(track!=null){track.pause();track.flush();}if(loaded)saveBattery();}hide();}
+    public void pause(){running=false;synchronized(lock){releaseAll();if(track!=null)try{track.pause();track.flush();}catch(Throwable ignored){}if(loaded)saveBattery();}hide();}
     private void hide(){activity.runOnUiThread(new Runnable(){public void run(){view.setVisibility(View.GONE);}});}
     public void close(){
-        running=false;stop=true;hide();Thread old=thread;thread=null;
+        running=false;stop=true;hide();Thread old=thread;
         if(old!=null&&old!=Thread.currentThread()){try{old.join(1500);}catch(InterruptedException e){Thread.currentThread().interrupt();}if(old.isAlive())throw new IllegalStateException("游戏尚未停止");}
-        synchronized(lock){releaseAll();rewindBuffer.clear();if(loaded){saveBattery();fn("retro_unload_game").invokeVoid(new Object[]{});}if(initialized){fn("retro_deinit").invokeVoid(new Object[]{});initialized=false;}loaded=false;if(gameFile!=null){if(!arcade&&!handheld&&!megadrive&&!superNintendo)gameFile.delete();gameFile=null;}hash=null;if(track!=null){track.pause();track.flush();track.release();track=null;}romMemory=gameInfo=pathMemory=null;if((arcade||handheld||megadrive||superNintendo)&&core!=null){core.close();core=null;loadedLibrary=null;coreOptions.clear();}}
+        thread=null;
+        synchronized(lock){releaseAll();rewindBuffer.clear();if(loaded)try{saveBattery();fn("retro_unload_game").invokeVoid(new Object[]{});}catch(Throwable ignored){}if(initialized)try{fn("retro_deinit").invokeVoid(new Object[]{});}catch(Throwable ignored){}initialized=false;loaded=false;if(gameFile!=null){if(!arcade&&!handheld&&!megadrive&&!superNintendo)gameFile.delete();gameFile=null;}hash=null;if(track!=null){try{track.pause();track.flush();}catch(Throwable ignored){}try{track.release();}catch(Throwable ignored){}track=null;}romMemory=gameInfo=pathMemory=null;if((arcade||handheld||megadrive||superNintendo)&&core!=null){try{core.close();}catch(Throwable ignored){}core=null;loadedLibrary=null;coreOptions.clear();}}
     }
     public void releaseAll(){synchronized(buttonLock){sources.clear();mask1=0;mask2=0;}}
     public boolean isRunning(){return running;}

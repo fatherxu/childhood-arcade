@@ -40,6 +40,6 @@
   };
   NativeEngine.prototype.thumbnail=function(){return this.legacy?this.legacy.thumbnail():bridge.nativeNesImage();};
   NativeEngine.prototype.setVolume=function(value){this.volume=value;if(this.legacy)this.legacy.setVolume(value);else bridge.nativeNesVolume(value);};
-  NativeEngine.prototype.close=function(){if(this.healthTimer){clearInterval(this.healthTimer);this.healthTimer=null;}if(this.legacy){var audio=this.legacy.audio;this.legacy.close();if(audio&&audio.state!=='closed')audio.close().catch(function(){});this.legacy=null;}bridge.nativeNesClose();if(this.kind==='gba'||this.kind==='md'||this.kind==='sfc'){var health=this.stats();if(health.error&&window.Arcade&&window.Arcade.storageError)window.Arcade.storageError(health.error);}document.documentElement.classList.remove('native-running');this.active=false;};
+  NativeEngine.prototype.close=function(){if(this.healthTimer){clearInterval(this.healthTimer);this.healthTimer=null;}if(this.legacy){var audio=this.legacy.audio;this.legacy.close();if(audio&&audio.state!=='closed')audio.close().catch(function(){});this.legacy=null;}try{bridge.nativeNesClose();}finally{document.documentElement.classList.remove('native-running');this.active=false;}if(this.kind==='gba'||this.kind==='md'||this.kind==='sfc'){var health=this.stats();if(health.error&&window.Arcade&&window.Arcade.storageError)window.Arcade.storageError(health.error);}};
   window.ArcadeEngine=NativeEngine;
 }());
