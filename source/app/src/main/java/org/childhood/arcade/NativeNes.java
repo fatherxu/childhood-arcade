@@ -48,7 +48,9 @@ public final class NativeNes {
     private final Activity activity;
     private final FrameLayout parent;
     private final Object lock=new Object(), imageLock=new Object();
-    private final AtomicIntegerArray buttons=new AtomicIntegerArray(2);
+    private final java.util.concurrent.ConcurrentHashMap<String,AtomicIntegerArray> sources=new java.util.concurrent.ConcurrentHashMap<String,AtomicIntegerArray>();
+    private final Object buttonLock=new Object();
+    private volatile int mask1=0,mask2=0;
     private final GameView view;
     private NativeLibrary core;
     private Function run,serialize,unserialize,stateSize;
@@ -120,7 +122,7 @@ public final class NativeNes {
     private final Poll poll=new Poll(){public void callback(){long t=inputStamp.getAndSet(0);if(t>0){inputLatencyMs=(System.nanoTime()-t)/1e6;inputSamples++;}}};
     private final Input input=new Input(){public short callback(int port,int device,int index,int id){
         if(port<0||port>1||index!=0||device!=1)return 0;
-        int mask=buttons.get(port);if(id==256)return (short)mask;
+        int mask=port==0?mask1:mask2;if(id==256)return (short)mask;
         return (short)((id>=0&&id<16&&(mask&(1<<id))!=0)?1:0);
     }};
     public NativeNes(Activity activity,FrameLayout parent){
@@ -228,13 +230,49 @@ public final class NativeNes {
         if(old!=null&&old!=Thread.currentThread()){try{old.join(1500);}catch(InterruptedException e){Thread.currentThread().interrupt();}if(old.isAlive())throw new IllegalStateException("游戏尚未停止");}
         synchronized(lock){releaseAll();rewindBuffer.clear();if(loaded){saveBattery();fn("retro_unload_game").invokeVoid(new Object[]{});}if(initialized){fn("retro_deinit").invokeVoid(new Object[]{});initialized=false;}loaded=false;if(gameFile!=null){if(!arcade&&!handheld&&!megadrive&&!superNintendo)gameFile.delete();gameFile=null;}hash=null;if(track!=null){track.pause();track.flush();track.release();track=null;}romMemory=gameInfo=pathMemory=null;if((arcade||handheld||megadrive||superNintendo)&&core!=null){core.close();core=null;loadedLibrary=null;coreOptions.clear();}}
     }
-    public void releaseAll(){buttons.set(0,0);buttons.set(1,0);}
+    public void releaseAll(){synchronized(buttonLock){sources.clear();mask1=0;mask2=0;}}
     public boolean isRunning(){return running;}
     public boolean isArcade(){return arcade;}
     public boolean isGba(){return handheld;}
     public boolean isMd(){return megadrive;}
     public boolean isSfc(){return superNintendo;}
-    public void button(int player,int button,boolean down){if(down)inputStamp.set(System.nanoTime());if(handheld&&player!=1)return;int[] mapping=megadrive?MAP_MD:(arcade||superNintendo)?MAP_ARCADE:handheld?MAP_HANDHELD:MAP_NES;if(player<1||player>2||button<0||button>=mapping.length)return;int index=player-1,mask=1<<mapping[button],old,now;do{old=buttons.get(index);now=down?(old|mask):(old&~mask);}while(!buttons.compareAndSet(index,old,now));}
+    public void button(int player,int button,boolean down){buttonFrom("legacy",player,button,down);}
+    /** Each source (touch, pad:&lt;id&gt;, lan:&lt;client&gt;) holds its own press counts so one
+     *  controller releasing a key can never clear a key another source still holds. */
+    public void buttonFrom(String source,int player,int button,boolean down){
+        if(down)inputStamp.set(System.nanoTime());
+        if(handheld&&player!=1)return;
+        int[] mapping=megadrive?MAP_MD:(arcade||superNintendo)?MAP_ARCADE:handheld?MAP_HANDHELD:MAP_NES;
+        if(player<1||player>2||button<0||button>=mapping.length)return;
+        String key=source==null||source.length()==0?"legacy":source;
+        int slot=(player-1)*16+mapping[button];
+        synchronized(buttonLock){
+            AtomicIntegerArray counts=sources.get(key);
+            if(counts==null){
+                if(!down)return;
+                counts=new AtomicIntegerArray(32);
+                sources.put(key,counts);
+            }
+            int old=counts.get(slot),now=down?old+1:Math.max(0,old-1);
+            if(now==old)return;
+            counts.set(slot,now);
+            refreshMasks();
+        }
+    }
+    public void releaseSource(String source){
+        if(source==null)return;
+        synchronized(buttonLock){if(sources.remove(source)!=null)refreshMasks();}
+    }
+    private void refreshMasks(){
+        int m1=0,m2=0;
+        for(AtomicIntegerArray counts:sources.values()){
+            for(int b=0;b<16;b++){
+                if(counts.get(b)>0)m1|=1<<b;
+                if(counts.get(16+b)>0)m2|=1<<b;
+            }
+        }
+        mask1=m1;mask2=m2;
+    }
     public void volume(float value){volume=Math.max(0,Math.min(1,value));synchronized(lock){if(track!=null)track.setVolume(volume);}}
     public void bounds(final float left,final float top,final float width,final float height,final float viewportWidth,final float viewportHeight){if(width<1||height<1)return;activity.runOnUiThread(new Runnable(){public void run(){FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(Math.round(width*parent.getWidth()/viewportWidth),Math.round(height*parent.getHeight()/viewportHeight));p.leftMargin=Math.round(left*parent.getWidth()/viewportWidth);p.topMargin=Math.round(top*parent.getHeight()/viewportHeight);view.setLayoutParams(p);}});}
     public String snapshot(){
@@ -279,7 +317,7 @@ public final class NativeNes {
     }
     public String rewindInfo(){synchronized(lock){return "{\"available\":"+rewindBuffer.size()+"}";}}
     public String image(){synchronized(imageLock){if(picture==null)return null;Bitmap bitmap=Bitmap.createBitmap(pictureWidth,pictureHeight,pictureBytes==4?Bitmap.Config.ARGB_8888:Bitmap.Config.RGB_565);bitmap.setHasAlpha(false);picture.position(0);bitmap.copyPixelsFromBuffer(picture);picture.position(0);ByteArrayOutputStream out=new ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.PNG,100,out);bitmap.recycle();return "data:image/png;base64,"+Base64.encodeToString(out.toByteArray(),Base64.NO_WRAP);}}
-    public String stats(){try{JSONObject out=new JSONObject();out.put("engine",engineId);out.put("reportedSaveBytes",reportedSaveBytes);out.put("running",running);out.put("loaded",loaded);out.put("frames",frames);out.put("fps",running&&resumeTime>0?(frames-resumeFrames)*1e9/(System.nanoTime()-resumeTime):0);out.put("targetFps",fps);out.put("frameAndAudioMs",cpuMs);out.put("audioFrames",audioFrames);out.put("drawFrames",drawFrames);out.put("presentedFrames",presentedFrames);out.put("presentationFps",running&&resumeTime>0?(presentedFrames-resumePresented)*1e9/(System.nanoTime()-resumeTime):0);out.put("inputLatencyMs",inputLatencyMs);out.put("inputSamples",inputSamples);out.put("pixelFormat",pixelFormat);out.put("audioPlayedFrames",track==null?0:(track.getPlaybackHeadPosition()&0xffffffffL));out.put("lateFrames",lateFrames);out.put("sampleRate",sampleRate);out.put("buttons1",buttons.get(0));out.put("buttons2",buttons.get(1));out.put("error",error);return out.toString();}catch(Exception e){return "{}";}}
+    public String stats(){try{JSONObject out=new JSONObject();out.put("engine",engineId);out.put("reportedSaveBytes",reportedSaveBytes);out.put("running",running);out.put("loaded",loaded);out.put("frames",frames);out.put("fps",running&&resumeTime>0?(frames-resumeFrames)*1e9/(System.nanoTime()-resumeTime):0);out.put("targetFps",fps);out.put("frameAndAudioMs",cpuMs);out.put("audioFrames",audioFrames);out.put("drawFrames",drawFrames);out.put("presentedFrames",presentedFrames);out.put("presentationFps",running&&resumeTime>0?(presentedFrames-resumePresented)*1e9/(System.nanoTime()-resumeTime):0);out.put("inputLatencyMs",inputLatencyMs);out.put("inputSamples",inputSamples);out.put("pixelFormat",pixelFormat);out.put("audioPlayedFrames",track==null?0:(track.getPlaybackHeadPosition()&0xffffffffL));out.put("lateFrames",lateFrames);out.put("sampleRate",sampleRate);out.put("buttons1",mask1);out.put("buttons2",mask2);out.put("error",error);return out.toString();}catch(Exception e){return "{}";}}
     private File handheldBatteryFile(){return new File(new File(activity.getFilesDir(),"store"),"battery:"+hash+".json");}
     private void saveHandheldBattery(){try{int n=((NativeLong)fn("retro_get_memory_size").invoke(NativeLong.class,new Object[]{0})).intValue();reportedSaveBytes=n;if(handheld)n=GbaSaveMemory.capacity(n);if(n<1||n>1048576||hash==null)return;Pointer data=(Pointer)fn("retro_get_memory_data").invoke(Pointer.class,new Object[]{0});if(data==null)return;byte[] bytes=data.getByteArray(0,n);String sum=digest(bytes);if(sum.equals(lastBatteryDigest))return;JSONObject value=new JSONObject().put("schema",1).put("format",superNintendo?"sfc-sram-base64":megadrive?"md-sram-base64":"gba-sram-base64").put("hash",hash).put("engine",engineId).put("bytes",n).put("sha256",sum).put("data",Base64.encodeToString(bytes,Base64.NO_WRAP));File target=handheldBatteryFile();target.getParentFile().mkdirs();android.util.AtomicFile file=new android.util.AtomicFile(target);FileOutputStream out=null;try{out=file.startWrite();out.write(value.toString().getBytes("UTF-8"));file.finishWrite(out);lastBatteryDigest=sum;}catch(Exception e){file.failWrite(out);throw e;}}catch(Throwable e){error="游戏内存档未能写入，原文件已保留："+e.toString();}}
     private void loadHandheldBattery()throws Exception{File file=handheldBatteryFile();if(!file.exists())return;if(file.length()>1500000)throw new IOException("游戏内存档过大，原文件已保留");ByteArrayOutputStream out=new ByteArrayOutputStream();try(InputStream in=new android.util.AtomicFile(file).openRead()){byte[] chunk=new byte[8192];int n;while((n=in.read(chunk))>0)out.write(chunk,0,n);}JSONObject value=new JSONObject(new String(out.toByteArray(),"UTF-8"));if(value.getInt("schema")!=1||!value.getString("format").equals(superNintendo?"sfc-sram-base64":megadrive?"md-sram-base64":"gba-sram-base64")||!value.getString("hash").equals(hash))throw new IOException("游戏内存档来自不同游戏或版本，原文件已保留");byte[] bytes=Base64.decode(value.getString("data"),Base64.DEFAULT);int n=((NativeLong)fn("retro_get_memory_size").invoke(NativeLong.class,new Object[]{0})).intValue();reportedSaveBytes=n;if(value.getInt("bytes")!=bytes.length||!digest(bytes).equals(value.getString("sha256")))throw new IOException("游戏内存档校验失败，原文件已保留");if(handheld){bytes=GbaSaveMemory.expand(bytes,n);n=bytes.length;}else if(bytes.length!=n||n<1||n>1048576)throw new IOException("游戏内存档大小不匹配，原文件已保留");Pointer memory=(Pointer)fn("retro_get_memory_data").invoke(Pointer.class,new Object[]{0});if(memory==null)throw new IOException("游戏存档内存未就绪");memory.write(0,bytes,0,n);lastBatteryDigest=value.getString("sha256");}

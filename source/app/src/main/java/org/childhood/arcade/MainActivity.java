@@ -42,7 +42,9 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
@@ -76,16 +78,17 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private volatile int lanPort=0;
     private volatile File lanTempFile=null;
     private final Object lanInputLock=new Object();
-    private final HashSet<Integer> lanHeldKeys=new HashSet<Integer>();
-    private volatile long lanInputActivity=0;
+    private final String[] lanSlots=new String[2];
+    private final HashMap<String,LanClient> lanClients=new HashMap<String,LanClient>();
     private volatile boolean lanWatchdogOn=false;
-    private final boolean[] lanPlayerSeen=new boolean[]{false,false};
+    private android.content.SharedPreferences playerPrefs;
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemUI();
         storeDir=new File(getFilesDir(),"store");
+        playerPrefs=getSharedPreferences("input_players",0);
         File recovery=new File(getFilesDir(),"store.previous");
         if(!storeDir.exists()&&recovery.exists())recovery.renameTo(storeDir);
         storeDir.mkdirs();
@@ -165,9 +168,21 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         int sources=device==null?event.getSource():device.getSources();
         return (sources&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD||(sources&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK;
     }
+    private String padFingerprint(int id){
+        InputDevice device=InputDevice.getDevice(id);
+        if(device==null)return null;
+        String descriptor=device.getDescriptor();
+        return gamepads.key(device)+":"+(descriptor==null?"":descriptor);
+    }
+    /** Prefer the slot this controller used last time; otherwise take the first free one. */
     private int player(int id){
         Integer existing=players.get(id);if(existing!=null)return existing;
-        int value=!players.containsValue(1)?1:!players.containsValue(2)?2:0;players.put(id,value);
+        String fingerprint=padFingerprint(id);
+        int preferred=0;
+        try{if(fingerprint!=null)preferred=playerPrefs.getInt(fingerprint,0);}catch(Throwable ignored){}
+        int value=preferred>0&&!players.containsValue(preferred)?preferred:(!players.containsValue(1)?1:!players.containsValue(2)?2:0);
+        players.put(id,value);
+        try{if(value>0&&fingerprint!=null&&(preferred==0||preferred==value))playerPrefs.edit().putInt(fingerprint,value).apply();}catch(Throwable ignored){}
         js("Arcade.nativeRegister("+id+","+value+")");return value;
     }
     private static boolean volumeKey(int code){return code==KeyEvent.KEYCODE_VOLUME_UP||code==KeyEvent.KEYCODE_VOLUME_DOWN||code==KeyEvent.KEYCODE_VOLUME_MUTE;}
@@ -184,7 +199,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     }
     private void sendAction(int id,int action,boolean down,int rawCode){
         int p=player(id);
-        if(nativeNes!=null&&nativeNes.isRunning()){if(p>0)nativeNes.button(p,coreAction(action),down);}
+        if(nativeNes!=null&&nativeNes.isRunning()){if(p>0)nativeNes.buttonFrom("pad:"+id,p,coreAction(action),down);}
         else if(p>0)js("Arcade.nativeKey("+action+","+down+","+id+",true,false,"+rawCode+")");
     }
     private void syncAction(int id,int action,int rawCode){
@@ -276,9 +291,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         Integer p=players.get(id);
         if(st==null||p==null||p<=0)return;
         for(int action=0;action<GamepadProfile.COUNT;action++)if(st.sent[action]){
-            if(nativeNes!=null&&nativeNes.isRunning())nativeNes.button(p,coreAction(action),false);
+            if(nativeNes!=null&&nativeNes.isRunning())nativeNes.buttonFrom("pad:"+id,p,coreAction(action),false);
             else js("Arcade.nativeKey("+action+",false,"+id+",true,false,-1)");
         }
+        if(nativeNes!=null)nativeNes.releaseSource("pad:"+id);
     }
     @Override public void onInputDeviceAdded(int id){releasePad(id);padStates.remove(id);axes.remove(id);}
     @Override public void onInputDeviceChanged(int id){releasePad(id);PadState old=padStates.remove(id);if(old!=null){old.sampleStart=0;old.maxX=0;old.maxY=0;}}
@@ -669,7 +685,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 lanPadUrl="http://"+lanAddress+":"+lanPort+"/pad/"+token;
                 lanBackupUrl="http://"+lanAddress+":"+lanPort+"/backup/"+token;
                 lanRestoreUrl="http://"+lanAddress+":"+lanPort+"/restore/"+token;
-                synchronized(lanInputLock){lanHeldKeys.clear();lanInputActivity=android.os.SystemClock.elapsedRealtime();lanPlayerSeen[0]=false;lanPlayerSeen[1]=false;}
+                synchronized(lanInputLock){lanClients.clear();lanSlots[0]=null;lanSlots[1]=null;}
                 final ServerSocket listener=server;
                 Thread thread=new Thread(new Runnable(){public void run(){lanAccept(listener);}},"ArcadeLan");
                 thread.setDaemon(true);lanThread=thread;thread.start();
@@ -729,15 +745,50 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         return body;
     }
     private void lanRemoteRelease(){
-        int[] keys;
-        synchronized(lanInputLock){keys=new int[lanHeldKeys.size()];int i=0;for(Integer key:lanHeldKeys)keys[i++]=key.intValue();lanHeldKeys.clear();}
-        for(int key:keys){try{if(nativeNes!=null)nativeNes.button(key/16+1,key%16,false);}catch(Throwable ignored){}}
+        synchronized(lanInputLock){
+            for(LanClient client:lanClients.values()){if(nativeNes!=null)try{nativeNes.releaseSource("lan:"+client.id);}catch(Throwable ignored){}}
+            lanClients.clear();lanSlots[0]=null;lanSlots[1]=null;
+        }
+    }
+    private static final class LanClient{
+        final String id;int slot;long seen;
+        LanClient(String id,int slot,long seen){this.id=id;this.slot=slot;this.seen=seen;}
+    }
+    /** Caller holds lanInputLock. Returns 1/2, or 0 when both slots are taken. */
+    private int lanClaimSlot(String id,int preferred){
+        long now=android.os.SystemClock.elapsedRealtime();
+        LanClient client=lanClients.get(id);
+        boolean fresh=client==null;
+        int current=client==null?0:client.slot;
+        int want=(preferred==1||preferred==2)?preferred:current;
+        if(want>0){
+            String owner=lanSlots[want-1];
+            if(owner==null||owner.equals(id)){
+                if(current>0&&current!=want)lanSlots[current-1]=null;
+                lanSlots[want-1]=id;current=want;
+            }
+        }
+        if(current==0)for(int i=0;i<2&&current==0;i++)if(lanSlots[i]==null||lanSlots[i].equals(id)){lanSlots[i]=id;current=i+1;}
+        if(current==0)return 0;
+        if(client==null)lanClients.put(id,new LanClient(id,current,now));
+        else{client.slot=current;client.seen=now;}
+        if(fresh)js("Arcade.remotePlayer("+current+")");
+        return current;
     }
     private final Runnable lanWatchdog=new Runnable(){public void run(){
         if(!lanWatchdogOn)return;
-        boolean stale=false;
-        synchronized(lanInputLock){stale=lanInputActivity>0&&android.os.SystemClock.elapsedRealtime()-lanInputActivity>6000;}
-        if(stale)lanRemoteRelease();
+        long now=android.os.SystemClock.elapsedRealtime();
+        synchronized(lanInputLock){
+            Iterator<Map.Entry<String,LanClient>> it=lanClients.entrySet().iterator();
+            while(it.hasNext()){
+                LanClient client=it.next().getValue();
+                if(now-client.seen<=7000)continue;
+                if(nativeNes!=null)nativeNes.releaseSource("lan:"+client.id);
+                if(client.slot>0&&client.id.equals(lanSlots[client.slot-1]))lanSlots[client.slot-1]=null;
+                it.remove();
+                js("Arcade.remoteLeft("+client.slot+")");
+            }
+        }
         if(lanWatchdogOn)uiHandler.postDelayed(this,2000);
     }};
     private void lanHandle(Socket socket){
@@ -761,28 +812,39 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             String token=lanToken;
             if(target.startsWith("/pad/")){
                 if(!lanTokenOk(target.substring(5),token)){lanWrite(socket,403,"禁止访问");return;}
-                lanWriteBytes(socket,200,"text/html; charset=utf-8",PAD_PAGE.replace("__TOKEN__",token).getBytes("UTF-8"),null);
+                String client=lanRandomToken();
+                lanWriteBytes(socket,200,"text/html; charset=utf-8",PAD_PAGE.replace("__TOKEN__",token).replace("__CLIENT__",client).getBytes("UTF-8"),null);
+                return;
+            }
+            if(target.startsWith("/claim/")){
+                if(!lanTokenOk(target.substring(7),token)){lanWrite(socket,403,"禁止访问");return;}
+                String client=lanParam(query,"c");
+                if(client==null||!client.matches("[a-z0-9]{6,16}")){lanWrite(socket,400,"参数错误");return;}
+                int slot;
+                synchronized(lanInputLock){slot=lanClaimSlot(client,lanInt(lanParam(query,"p"),0));}
+                lanWriteBytes(socket,200,"application/json; charset=utf-8",("{\"slot\":"+slot+"}").getBytes("UTF-8"),null);
                 return;
             }
             if(target.startsWith("/input/")){
                 if(!lanTokenOk(target.substring(7),token)){lanWrite(socket,403,"禁止访问");return;}
                 int player=lanInt(lanParam(query,"p"),0),button=lanInt(lanParam(query,"b"),-1),down=lanInt(lanParam(query,"d"),0);
-                if((player!=1&&player!=2)||button<0||button>11){lanWrite(socket,400,"参数错误");return;}
-                boolean announce;
-                synchronized(lanInputLock){
-                    lanInputActivity=android.os.SystemClock.elapsedRealtime();
-                    if(down!=0)lanHeldKeys.add((player-1)*16+button);else lanHeldKeys.remove((player-1)*16+button);
-                    announce=!lanPlayerSeen[player-1];
-                    if(announce)lanPlayerSeen[player-1]=true;
-                }
-                try{if(nativeNes!=null)nativeNes.button(player,button,down!=0);}catch(Throwable ignored){}
-                if(announce)js("Arcade.remotePlayer("+player+")");
+                if(button<0||button>11){lanWrite(socket,400,"参数错误");return;}
+                String client=lanParam(query,"c");
+                if(client==null||!client.matches("[a-z0-9]{6,16}"))client=player==2?"legacy-2":"legacy-1";
+                int slot;
+                synchronized(lanInputLock){slot=lanClaimSlot(client,lanClients.containsKey(client)?0:player);}
+                if(slot<=0){lanWrite(socket,409,"两个手柄位置都已占用");return;}
+                try{if(nativeNes!=null)nativeNes.buttonFrom("lan:"+client,slot,coreAction(button),down!=0);}catch(Throwable ignored){}
                 lanWrite(socket,200,"ok");
                 return;
             }
             if(target.startsWith("/ping/")){
                 if(!lanTokenOk(target.substring(6),token)){lanWrite(socket,403,"禁止访问");return;}
-                synchronized(lanInputLock){lanInputActivity=android.os.SystemClock.elapsedRealtime();}
+                String client=lanParam(query,"c");
+                synchronized(lanInputLock){
+                    LanClient known=client==null?null:lanClients.get(client);
+                    if(known!=null)known.seen=android.os.SystemClock.elapsedRealtime();
+                }
                 lanWrite(socket,200,"ok");
                 return;
             }
@@ -907,12 +969,14 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         +"<button class='btn' data-b='2'>SELECT</button>"
         +"<button class='btn' data-b='3'>START</button>"
         +"</div>"
-        +"<script>(function(){var T='__TOKEN__',P=1,active={},burst=false,burstTimers={},offline=false;"
+        +"<script>(function(){var T='__TOKEN__',C='__CLIENT__',P=0,ready=false,active={},burst=false,burstTimers={},offline=false,wanted=1;"
         +"var nodes=document.querySelectorAll('[data-b]'),pnodes=document.querySelectorAll('[data-p]'),lat=document.getElementById('lat'),burstBtn=document.getElementById('burst');"
-        +"try{if(localStorage.getItem('padPlayer')==='2')P=2;}catch(err){}"
+        +"try{if(localStorage.getItem('padPlayer')==='2')wanted=2;}catch(err){}P=wanted;"
         +"function status(text,fail){lat.textContent=text;lat.style.color=fail?'#ff6b6b':'#8f8f9d';}"
         +"function vibrate(){try{if(navigator.vibrate)navigator.vibrate(15);}catch(err){}}"
-        +"function send(b,d){if(offline)return;var t0=performance.now();fetch('/input/'+T+'?p='+P+'&b='+b+'&d='+d,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('http');offline=false;status('延迟 '+Math.round(performance.now()-t0)+' ms',false);}).catch(function(){offline=true;status('已断开',true);releaseAll();});}"
+        +"function highlight(){for(var i=0;i<pnodes.length;i++)pnodes[i].classList.toggle('on',Number(pnodes[i].getAttribute('data-p'))===P);}"
+        +"function claim(prefer){prefer=Number(prefer)||wanted;return fetch('/claim/'+T+'?c='+C+'&p='+prefer,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('http');return r.json();}).then(function(data){var slot=Number(data&&data.slot)||0;if(!slot){ready=false;status('两个手柄位置都已占用',true);highlight();throw new Error('full');}P=slot;wanted=slot;ready=true;offline=false;try{localStorage.setItem('padPlayer',''+P);}catch(err){}highlight();status('已连接 · '+(P===1?'1P':'2P'),false);return P;}).catch(function(err){if(err.message!=='full'){offline=true;status('已断开',true);}throw err;});}"
+        +"function send(b,d){if(!ready||offline)return;var t0=performance.now();fetch('/input/'+T+'?c='+C+'&p='+P+'&b='+b+'&d='+d,{cache:'no-store'}).then(function(r){if(r.status===409){ready=false;status('两个手柄位置都已占用',true);releaseAll();throw new Error('full');}if(!r.ok)throw new Error('http');offline=false;status('延迟 '+Math.round(performance.now()-t0)+' ms · '+(P===1?'1P':'2P'),false);}).catch(function(){if(!ready)return;offline=true;status('已断开',true);releaseAll();});}"
         +"function startBurst(b){if(burstTimers[b])return;var d=1;send(b,1);burstTimers[b]=setInterval(function(){d=d?0:1;send(b,d);},90);}"
         +"function stopBurst(b,keep){if(burstTimers[b]){clearInterval(burstTimers[b]);delete burstTimers[b];}send(b,keep?1:0);}"
         +"function padDown(b){b=''+b;if(active[b])return;active[b]=1;if(burst&&(b==='0'||b==='1'||b==='8'||b==='9'))startBurst(b);else send(b,1);}"
@@ -933,8 +997,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         +"el.addEventListener('touchcancel',function(e){up(el,e);},{passive:false});"
         +"}})(nodes[i]);}"
         +"for(var j=0;j<pnodes.length;j++){(function(el){"
-        +"el.classList.toggle('on',Number(el.getAttribute('data-p'))===P);"
-        +"el.addEventListener('click',function(){releaseAll();P=Number(el.getAttribute('data-p'));try{localStorage.setItem('padPlayer',''+P);}catch(err){}for(var k=0;k<pnodes.length;k++)pnodes[k].classList.toggle('on',pnodes[k]===el);vibrate();});"
+        +"el.addEventListener('click',function(){vibrate();if(!ready){claim(Number(el.getAttribute('data-p'))).catch(function(){});return;}releaseAll();claim(Number(el.getAttribute('data-p'))).catch(function(){});});"
         +"})(pnodes[j]);}"
         +"var joy=document.getElementById('joy'),knob=document.getElementById('knob'),joyId=null,joyState={left:0,right:0,up:0,down:0},JOY={left:6,right:7,up:4,down:5};"
         +"function joySet(name,on){on=on?1:0;if(joyState[name]===on)return;joyState[name]=on;if(on)padDown(JOY[name]);else padUp(JOY[name]);}"
@@ -955,7 +1018,8 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         +"window.addEventListener('blur',releaseAll);"
         +"document.addEventListener('visibilitychange',function(){if(document.hidden)releaseAll();});"
         +"window.addEventListener('pagehide',releaseAll);"
-        +"setInterval(function(){fetch('/ping/'+T,{cache:'no-store'}).then(function(r){if(r.ok){offline=false;if(lat.textContent==='已断开')status('已连接',false);}}).catch(function(){offline=true;status('已断开',true);releaseAll();});},2000);"
+        +"claim(wanted).catch(function(){});"
+        +"setInterval(function(){if(!ready){claim(wanted).catch(function(){});return;}fetch('/ping/'+T+'?c='+C,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('http');offline=false;}).catch(function(){offline=true;status('已断开',true);releaseAll();});},2000);"
         +"})();</script></body></html>";
     private static final String RESTORE_PAGE="<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
         +"<meta name='viewport' content='width=device-width,initial-scale=1,user-scalable=no'>"
@@ -1011,6 +1075,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public void nativeNesResume(){nativeNes.resume();}
         @JavascriptInterface public void nativeNesClose(){try{nativeNes.close();}catch(RuntimeException e){android.util.Log.w("ArcadeCore","游戏线程未能及时停止",e);}}
         @JavascriptInterface public void nativeNesButton(int player,int button,boolean down){nativeNes.button(player,button,down);}
+        @JavascriptInterface public void nativeNesButtonFrom(String source,int player,int button,boolean down){nativeNes.buttonFrom("js:"+source,player,button,down);}
         @JavascriptInterface public void nativeNesRelease(){nativeNes.releaseAll();}
         @JavascriptInterface public void nativeNesVolume(float value){nativeNes.volume(value);}
         @JavascriptInterface public void nativeNesBounds(float left,float top,float width,float height,float viewportWidth,float viewportHeight){nativeNes.bounds(left,top,width,height,viewportWidth,viewportHeight);}

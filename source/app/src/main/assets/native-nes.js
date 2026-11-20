@@ -23,7 +23,7 @@
   NativeEngine.prototype.resume=function(){if(this.legacy)return this.legacy.resume();if(this.active){document.documentElement.classList.add('native-running');this.syncBounds();bridge.nativeNesResume();}};
   NativeEngine.prototype.pause=function(){if(this.legacy)return this.legacy.pause();bridge.nativeNesPause();if(this.kind==='gba'||this.kind==='md'||this.kind==='sfc'){var health=this.stats();if(health.error&&window.Arcade&&window.Arcade.storageError)window.Arcade.storageError(health.error);}document.documentElement.classList.remove('native-running');};
   NativeEngine.prototype.releaseAll=function(){if(this.legacy)return this.legacy.releaseAll();bridge.nativeNesRelease();};
-  NativeEngine.prototype.button=function(player,button,down){if(this.legacy)return this.legacy.button(player,button,down);if(this.active)bridge.nativeNesButton(player,button,!!down);};
+  NativeEngine.prototype.button=function(player,button,down,source){if(this.legacy)return this.legacy.button(player,button,down);if(this.active){if(bridge.nativeNesButtonFrom)bridge.nativeNesButtonFrom(source||'key',player,button,!!down);else bridge.nativeNesButton(player,button,!!down);}};
   NativeEngine.prototype.snapshot=function(){return this.legacy?this.legacy.snapshot():result(bridge.nativeNesSnapshot());};
   NativeEngine.prototype.restore=function(save){
     var self=this;if(!save||save.schema!==1||save.hash!==this.hash||!save.state)throw new Error('存档与当前游戏版本不匹配');
