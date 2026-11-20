@@ -287,6 +287,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         return true;
     }
     private void releasePad(int id){
+        if(nativeNes!=null)nativeNes.releaseSource("pad:"+id);
         PadState st=padStates.get(id);
         Integer p=players.get(id);
         if(st==null||p==null||p<=0)return;
@@ -294,7 +295,6 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             if(nativeNes!=null&&nativeNes.isRunning())nativeNes.buttonFrom("pad:"+id,p,coreAction(action),false);
             else js("Arcade.nativeKey("+action+",false,"+id+",true,false,-1)");
         }
-        if(nativeNes!=null)nativeNes.releaseSource("pad:"+id);
     }
     @Override public void onInputDeviceAdded(int id){releasePad(id);padStates.remove(id);axes.remove(id);}
     @Override public void onInputDeviceChanged(int id){releasePad(id);PadState old=padStates.remove(id);if(old!=null){old.sampleStart=0;old.maxX=0;old.maxY=0;}}
@@ -771,7 +771,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         if(current==0)for(int i=0;i<2&&current==0;i++)if(lanSlots[i]==null||lanSlots[i].equals(id)){lanSlots[i]=id;current=i+1;}
         if(current==0)return 0;
         if(client==null)lanClients.put(id,new LanClient(id,current,now));
-        else{client.slot=current;client.seen=now;}
+        else{
+            if(client.slot!=current&&nativeNes!=null)nativeNes.releaseSource("lan:"+id);
+            client.slot=current;client.seen=now;
+        }
         if(fresh)js("Arcade.remotePlayer("+current+")");
         return current;
     }
@@ -841,10 +844,13 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             if(target.startsWith("/ping/")){
                 if(!lanTokenOk(target.substring(6),token)){lanWrite(socket,403,"禁止访问");return;}
                 String client=lanParam(query,"c");
+                boolean known=true;
                 synchronized(lanInputLock){
-                    LanClient known=client==null?null:lanClients.get(client);
-                    if(known!=null)known.seen=android.os.SystemClock.elapsedRealtime();
+                    LanClient entry=client==null?null:lanClients.get(client);
+                    if(entry!=null)entry.seen=android.os.SystemClock.elapsedRealtime();
+                    else if(client!=null)known=false;
                 }
+                if(!known){lanWrite(socket,410,"手柄位置已收回");return;}
                 lanWrite(socket,200,"ok");
                 return;
             }
@@ -970,13 +976,14 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         +"<button class='btn' data-b='3'>START</button>"
         +"</div>"
         +"<script>(function(){var T='__TOKEN__',C='__CLIENT__',P=0,ready=false,active={},burst=false,burstTimers={},offline=false,wanted=1;"
+        +"try{var saved=sessionStorage.getItem('padClient');if(saved&&/^[a-z0-9]{6,16}$/.test(saved))C=saved;else sessionStorage.setItem('padClient',C);}catch(err){}"
         +"var nodes=document.querySelectorAll('[data-b]'),pnodes=document.querySelectorAll('[data-p]'),lat=document.getElementById('lat'),burstBtn=document.getElementById('burst');"
         +"try{if(localStorage.getItem('padPlayer')==='2')wanted=2;}catch(err){}P=wanted;"
         +"function status(text,fail){lat.textContent=text;lat.style.color=fail?'#ff6b6b':'#8f8f9d';}"
         +"function vibrate(){try{if(navigator.vibrate)navigator.vibrate(15);}catch(err){}}"
         +"function highlight(){for(var i=0;i<pnodes.length;i++)pnodes[i].classList.toggle('on',Number(pnodes[i].getAttribute('data-p'))===P);}"
-        +"function claim(prefer){prefer=Number(prefer)||wanted;return fetch('/claim/'+T+'?c='+C+'&p='+prefer,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('http');return r.json();}).then(function(data){var slot=Number(data&&data.slot)||0;if(!slot){ready=false;status('两个手柄位置都已占用',true);highlight();throw new Error('full');}P=slot;wanted=slot;ready=true;offline=false;try{localStorage.setItem('padPlayer',''+P);}catch(err){}highlight();status('已连接 · '+(P===1?'1P':'2P'),false);return P;}).catch(function(err){if(err.message!=='full'){offline=true;status('已断开',true);}throw err;});}"
-        +"function send(b,d){if(!ready||offline)return;var t0=performance.now();fetch('/input/'+T+'?c='+C+'&p='+P+'&b='+b+'&d='+d,{cache:'no-store'}).then(function(r){if(r.status===409){ready=false;status('两个手柄位置都已占用',true);releaseAll();throw new Error('full');}if(!r.ok)throw new Error('http');offline=false;status('延迟 '+Math.round(performance.now()-t0)+' ms · '+(P===1?'1P':'2P'),false);}).catch(function(){if(!ready)return;offline=true;status('已断开',true);releaseAll();});}"
+        +"function claim(prefer){prefer=Number(prefer)||wanted;return fetch('/claim/'+T+'?c='+C+'&p='+prefer,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('http');return r.json();}).then(function(data){var slot=Number(data&&data.slot)||0;if(!slot){P=0;ready=false;status('两个手柄位置都已占用',true);highlight();throw new Error('full');}P=slot;wanted=slot;ready=true;offline=false;try{localStorage.setItem('padPlayer',''+P);}catch(err){}highlight();status('已连接 · '+(P===1?'1P':'2P'),false);return P;}).catch(function(err){if(err.message!=='full'){offline=true;status('已断开',true);}throw err;});}"
+        +"function send(b,d){if(!ready||offline)return;var t0=performance.now();fetch('/input/'+T+'?c='+C+'&p='+P+'&b='+b+'&d='+d,{cache:'no-store'}).then(function(r){if(r.status===409){P=0;ready=false;releaseAll();status('两个手柄位置都已占用',true);highlight();throw new Error('full');}if(!r.ok)throw new Error('http');offline=false;status('延迟 '+Math.round(performance.now()-t0)+' ms · '+(P===1?'1P':'2P'),false);}).catch(function(){if(!ready)return;offline=true;status('已断开',true);releaseAll();});}"
         +"function startBurst(b){if(burstTimers[b])return;var d=1;send(b,1);burstTimers[b]=setInterval(function(){d=d?0:1;send(b,d);},90);}"
         +"function stopBurst(b,keep){if(burstTimers[b]){clearInterval(burstTimers[b]);delete burstTimers[b];}send(b,keep?1:0);}"
         +"function padDown(b){b=''+b;if(active[b])return;active[b]=1;if(burst&&(b==='0'||b==='1'||b==='8'||b==='9'))startBurst(b);else send(b,1);}"
@@ -1016,10 +1023,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         +"}"
         +"function releaseAll(){for(var i=0;i<nodes.length;i++)up(nodes[i],null);joyReset();}"
         +"window.addEventListener('blur',releaseAll);"
-        +"document.addEventListener('visibilitychange',function(){if(document.hidden)releaseAll();});"
+        +"document.addEventListener('visibilitychange',function(){if(document.hidden)releaseAll();else if(ready)claim(P).catch(function(){});});"
         +"window.addEventListener('pagehide',releaseAll);"
         +"claim(wanted).catch(function(){});"
-        +"setInterval(function(){if(!ready){claim(wanted).catch(function(){});return;}fetch('/ping/'+T+'?c='+C,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('http');offline=false;}).catch(function(){offline=true;status('已断开',true);releaseAll();});},2000);"
+        +"setInterval(function(){if(!ready){claim(wanted).catch(function(){});return;}fetch('/ping/'+T+'?c='+C,{cache:'no-store'}).then(function(r){if(r.status===410){ready=false;releaseAll();status('正在重新连接…',true);claim(wanted).catch(function(){});return;}if(!r.ok)throw new Error('http');offline=false;}).catch(function(){if(!ready)return;offline=true;status('已断开',true);releaseAll();});},2000);"
         +"})();</script></body></html>";
     private static final String RESTORE_PAGE="<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
         +"<meta name='viewport' content='width=device-width,initial-scale=1,user-scalable=no'>"
