@@ -9,10 +9,20 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 
+def file_sha256(path):
+    hasher = hashlib.sha256()
+    with Path(path).open('rb') as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 def download(url, destination, expected):
     if urlparse(url).scheme != 'https' or not re.fullmatch(r'[0-9a-f]{64}', expected):
         raise ValueError('需要 HTTPS 地址和可信来源的 SHA-256')
     dest = Path(destination).expanduser().resolve()
+    if dest.is_file() and file_sha256(dest) == expected:
+        return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix='.download-', dir=str(dest.parent))
     try:

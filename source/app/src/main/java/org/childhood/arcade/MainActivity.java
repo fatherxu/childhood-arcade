@@ -3,9 +3,14 @@ package org.childhood.arcade;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.ActivityNotFoundException;
+import android.content.pm.PackageInfo;
+import android.database.Cursor;
 import android.hardware.input.InputManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.StatFs;
+import android.provider.DocumentsContract;
 import android.util.AtomicFile;
 import android.util.Base64;
 import android.view.InputDevice;
@@ -26,19 +31,55 @@ import android.widget.FrameLayout;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.*;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 public class MainActivity extends Activity implements InputManager.InputDeviceListener {
     private WebView web;
     private NativeNes nativeNes;
     private ValueCallback<Uri[]> chooser;
     private String pendingBackup;
+    private boolean pageActive=true;
     private InputManager inputs;
     private final HashMap<Integer, boolean[]> axes = new HashMap<Integer, boolean[]>();
     private final HashMap<Integer, Integer> players = new HashMap<Integer, Integer>();
+    private final HashMap<Integer, PadState> padStates = new HashMap<Integer, PadState>();
+    private GamepadProfile gamepads;
+    private volatile boolean gamepadMonitor=false;
+    private volatile String captureKey=null;
+    private volatile int captureAction=-1;
+    private final android.os.Handler uiHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable captureTimeout=new Runnable(){public void run(){if(captureKey!=null){captureKey=null;captureAction=-1;js("Arcade.gamepadCaptureCanceled()");}}};
     private File storeDir;
     private final Object storeLock = new Object();
-    private static final int PICK_FILE=10, EXPORT_FILE=11;
+    private static final int PICK_FILE=10, EXPORT_FILE=11, PICK_FOLDER=12, MAX_LIBRARY=2000, MAX_SCAN_DEPTH=4;
+    private volatile boolean scanning=false;
+    private static final SecureRandom LAN_RANDOM=new SecureRandom();
+    private final Object lanLock=new Object();
+    private volatile ServerSocket lanSocket=null;
+    private volatile Thread lanThread=null;
+    private volatile String lanToken=null,lanAddress=null,lanPadUrl=null,lanBackupUrl=null,lanRestoreUrl=null;
+    private volatile int lanPort=0;
+    private volatile File lanTempFile=null;
+    private final Object lanInputLock=new Object();
+    private final HashSet<Integer> lanHeldKeys=new HashSet<Integer>();
+    private volatile long lanInputActivity=0;
+    private volatile boolean lanWatchdogOn=false;
+    private final boolean[] lanPlayerSeen=new boolean[]{false,false};
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -55,7 +96,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
-        settings.setAllowFileAccess(true);
+        settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
         settings.setAllowFileAccessFromFileURLs(false);
         settings.setAllowUniversalAccessFromFileURLs(false);
@@ -72,6 +113,19 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                     if(asset.contains("..")||asset.startsWith("/"))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));
                     String mime=asset.endsWith(".js")?"text/javascript":asset.endsWith(".css")?"text/css":asset.endsWith(".html")?"text/html":asset.endsWith(".wasm")?"application/wasm":asset.endsWith(".png")?"image/png":asset.endsWith(".ttf")?"font/ttf":"application/octet-stream";
                     try{return new WebResourceResponse(mime,(mime.startsWith("text/")?"UTF-8":null),getAssets().open(asset));}catch(IOException e){return new WebResourceResponse("text/plain","UTF-8",404,"Not Found",null,new ByteArrayInputStream(new byte[0]));}
+                }
+                if(address.startsWith("https://appassets.androidplatform.net/library-cover/")){
+                    String name=request.getUrl().getPath().substring("/library-cover/".length());
+                    if(name.matches("[a-f0-9]{64}\\.(png|jpg|jpeg|webp)")){
+                        File file=new File(new File(getFilesDir(),"library/covers"),name);
+                        if(file.isFile()){
+                            String mime=name.endsWith(".png")?"image/png":name.endsWith(".webp")?"image/webp":"image/jpeg";
+                            HashMap<String,String> headers=new HashMap<String,String>();
+                            headers.put("Cache-Control","public, max-age=31536000, immutable");
+                            try{return new WebResourceResponse(mime,null,200,"OK",headers,new FileInputStream(file));}catch(IOException ignored){}
+                        }
+                    }
+                    return new WebResourceResponse("text/plain","UTF-8",404,"Not Found",null,new ByteArrayInputStream(new byte[0]));
                 }
                 String scheme=request.getUrl().getScheme();
                 if("http".equals(scheme)||"https".equals(scheme))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));
@@ -95,52 +149,165 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         setContentView(root);nativeNes=new NativeNes(this,root);
         web.loadUrl("https://appassets.androidplatform.net/assets/index.html");
         web.post(new Runnable(){public void run(){if(web==null)return;
-            web.evaluateJavascript("(function(){var a=window.Arcade;return {title:document.title,ready:!!a,state:a?a.getState():null,catalogCount:window.GAME_CATALOG?window.GAME_CATALOG.length:0,visible:document.visibilityState};})()",new ValueCallback<String>(){public void onReceiveValue(String value){getSharedPreferences("deployment",0).edit().putString("health",value).putLong("health_at",android.os.SystemClock.elapsedRealtime()).apply();}});
-            web.postDelayed(this,1000);
+            if(pageActive)web.evaluateJavascript("(function(){var a=window.Arcade;return {title:document.title,ready:!!a,state:a?a.getState():null,catalogCount:window.GAME_CATALOG?window.GAME_CATALOG.length:0,visible:document.visibilityState};})()",new ValueCallback<String>(){public void onReceiveValue(String value){getSharedPreferences("deployment",0).edit().putString("health",value).putLong("health_at",android.os.SystemClock.elapsedRealtime()).apply();}});
+            web.postDelayed(this,2000);
         }});
-        inputs=(InputManager)getSystemService(INPUT_SERVICE);inputs.registerInputDeviceListener(this,null);
+        inputs=(InputManager)getSystemService(INPUT_SERVICE);gamepads=new GamepadProfile(this);inputs.registerInputDeviceListener(this,null);
     }
     private void hideSystemUI(){getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE);}
     private void js(final String value){if(web!=null)web.post(new Runnable(){public void run(){if(web!=null)web.evaluateJavascript("if(window.Arcade){"+value+"}",null);}});}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)hideSystemUI();}
-    @Override protected void onPause(){if(nativeNes!=null)nativeNes.pause();super.onPause();js("Arcade.lifecyclePause()");}
-    @Override protected void onDestroy(){if(nativeNes!=null)nativeNes.close();if(inputs!=null)inputs.unregisterInputDeviceListener(this);if(web!=null){web.removeJavascriptInterface("NativeArcade");web.destroy();web=null;}super.onDestroy();}
-    private boolean gamepad(KeyEvent event){return (event.getSource()&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD||(event.getSource()&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK;}
+    @Override protected void onResume(){super.onResume();pageActive=true;}
+    @Override protected void onPause(){pageActive=false;if(nativeNes!=null)nativeNes.pause();super.onPause();js("Arcade.lifecyclePause()");}
+    @Override protected void onDestroy(){lanStop();if(nativeNes!=null){try{nativeNes.close();}catch(RuntimeException e){android.util.Log.w("ArcadeCore","退出时游戏线程未能及时停止",e);}}if(inputs!=null)inputs.unregisterInputDeviceListener(this);uiHandler.removeCallbacks(captureTimeout);if(web!=null){web.removeJavascriptInterface("NativeArcade");web.destroy();web=null;}super.onDestroy();}
+    private boolean gamepad(KeyEvent event){
+        InputDevice device=InputDevice.getDevice(event.getDeviceId());
+        int sources=device==null?event.getSource():device.getSources();
+        return (sources&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD||(sources&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK;
+    }
     private int player(int id){
         Integer existing=players.get(id);if(existing!=null)return existing;
         int value=!players.containsValue(1)?1:!players.containsValue(2)?2:0;players.put(id,value);
         js("Arcade.nativeRegister("+id+","+value+")");return value;
     }
-    private int nesButton(int code){if(nativeNes!=null&&nativeNes.isGba()){if(code==102||code==104)return 10;if(code==103||code==105)return 11;}if(nativeNes!=null&&(nativeNes.isArcade()||nativeNes.isMd()||nativeNes.isSfc())){if(code==99)return 8;if(code==100)return 9;if(code==102||code==104)return 10;if(code==103||code==105)return 11;}switch(code){case 19:return 4;case 20:return 5;case 21:return 6;case 22:return 7;case 96:case 100:return 0;case 97:case 99:return 1;case 108:return 3;case 109:return 2;default:return -1;}}
+    private static boolean volumeKey(int code){return code==KeyEvent.KEYCODE_VOLUME_UP||code==KeyEvent.KEYCODE_VOLUME_DOWN||code==KeyEvent.KEYCODE_VOLUME_MUTE;}
+    private static boolean padKey(int code){return (code>=KeyEvent.KEYCODE_BUTTON_A&&code<=KeyEvent.KEYCODE_BUTTON_MODE)||(code>=188&&code<=206)||(code>=KeyEvent.KEYCODE_DPAD_UP&&code<=KeyEvent.KEYCODE_DPAD_CENTER)||code==KeyEvent.KEYCODE_ENTER;}
+    private GamepadProfile.Profile profile(int id){return gamepads.resolve(InputDevice.getDevice(id));}
+    private PadState state(int id){PadState s=padStates.get(id);if(s==null){s=new PadState();padStates.put(id,s);}return s;}
+    private void startCapture(String key,int action){clearCapture(false);captureKey=key;captureAction=action;uiHandler.removeCallbacks(captureTimeout);uiHandler.postDelayed(captureTimeout,15000);}
+    private void clearCapture(boolean notify){captureKey=null;captureAction=-1;uiHandler.removeCallbacks(captureTimeout);if(notify)js("Arcade.gamepadCaptureCanceled()");}
+    /** Two face button systems keep the familiar Y=A, X=B fallback. */
+    private int coreAction(int action){
+        boolean two=nativeNes==null||nativeNes.isGba()||(!nativeNes.isArcade()&&!nativeNes.isMd()&&!nativeNes.isSfc());
+        if(two){if(action==GamepadProfile.X)return GamepadProfile.B;if(action==GamepadProfile.Y)return GamepadProfile.A;}
+        return action;
+    }
+    private void sendAction(int id,int action,boolean down,int rawCode){
+        int p=player(id);
+        if(nativeNes!=null&&nativeNes.isRunning()){if(p>0)nativeNes.button(p,coreAction(action),down);}
+        else if(p>0)js("Arcade.nativeKey("+action+","+down+","+id+",true,false,"+rawCode+")");
+    }
+    private void syncAction(int id,int action,int rawCode){
+        PadState st=state(id);
+        boolean want=st.keys[action]>0||st.axes[action];
+        if(want!=st.sent[action]){st.sent[action]=want;sendAction(id,action,want,rawCode);}
+    }
+    private void keyAction(int id,int action,boolean down,int rawCode){
+        PadState st=state(id);
+        if(down){if(st.keys[action]<2)st.keys[action]++;}else if(st.keys[action]>0)st.keys[action]--;
+        syncAction(id,action,rawCode);
+    }
     @Override public boolean dispatchKeyEvent(KeyEvent e){
-        int c=e.getKeyCode();
-        if(c==KeyEvent.KEYCODE_VOLUME_UP||c==KeyEvent.KEYCODE_VOLUME_DOWN||c==KeyEvent.KEYCODE_VOLUME_MUTE)return super.dispatchKeyEvent(e);
-        boolean handle=c==4||c==19||c==20||c==21||c==22||c==23||c==66||c==82||c==96||c==97||c==99||c==100||c==108||c==109||c==110||c==102||c==103||c==104||c==105;
-        if(handle&&(e.getAction()==KeyEvent.ACTION_DOWN||e.getAction()==KeyEvent.ACTION_UP)){
-            boolean pad=gamepad(e);int p=pad?player(e.getDeviceId()):1,b=nesButton(c);
-            if(nativeNes!=null&&nativeNes.isRunning()&&b>=0){if(p>0)nativeNes.button(p,b,e.getAction()==KeyEvent.ACTION_DOWN);return true;}
-            js("Arcade.nativeKey("+c+","+(e.getAction()==KeyEvent.ACTION_DOWN)+","+e.getDeviceId()+","+gamepad(e)+","+(e.getRepeatCount()>0)+")");return true;
+        int code=e.getKeyCode();
+        if(volumeKey(code))return super.dispatchKeyEvent(e);
+        int id=e.getDeviceId();
+        boolean pad=gamepad(e);
+        boolean down=e.getAction()==KeyEvent.ACTION_DOWN;
+        boolean repeat=e.getRepeatCount()>0;
+        if(captureKey!=null&&pad&&down&&!repeat){
+            if(code==KeyEvent.KEYCODE_BACK||code==KeyEvent.KEYCODE_MENU||code==KeyEvent.KEYCODE_BUTTON_MODE){clearCapture(true);return true;}
+            InputDevice device=InputDevice.getDevice(id);
+            String key=device==null?null:gamepads.key(device);
+            if(key!=null&&key.equals(captureKey)){
+                int action=captureAction;
+                boolean ok=gamepads.bind(key,action,code);
+                clearCapture(false);
+                if(ok)js("Arcade.gamepadCaptured("+action+","+JSONObject.quote(GamepadProfile.keyLabel(code))+")");
+                else js("Arcade.gamepadCaptureCanceled()");
+                return true;
+            }
         }
-        return super.dispatchKeyEvent(e);
+        int action=-1;
+        if(pad){GamepadProfile.Profile profile=profile(id);if(profile!=null)action=profile.actionForKey(code);}
+        if(gamepadMonitor&&pad)js("Arcade.gamepadTest("+id+",\"key\","+code+","+down+","+action+","+JSONObject.quote(GamepadProfile.keyLabel(code))+")");
+        boolean ui=code==KeyEvent.KEYCODE_BACK||code==KeyEvent.KEYCODE_MENU||code==KeyEvent.KEYCODE_BUTTON_MODE||(!pad&&(code==KeyEvent.KEYCODE_DPAD_UP||code==KeyEvent.KEYCODE_DPAD_DOWN||code==KeyEvent.KEYCODE_DPAD_LEFT||code==KeyEvent.KEYCODE_DPAD_RIGHT||code==KeyEvent.KEYCODE_DPAD_CENTER||code==KeyEvent.KEYCODE_ENTER));
+        if(action<0&&!ui){
+            if(pad&&padKey(code))return true;
+            return super.dispatchKeyEvent(e);
+        }
+        if(e.getAction()!=KeyEvent.ACTION_DOWN&&e.getAction()!=KeyEvent.ACTION_UP)return true;
+        if(repeat)return true;
+        if(action>=0){keyAction(id,action,down,code);return true;}
+        js("Arcade.nativeKey(-1,"+down+","+id+","+pad+","+repeat+","+code+")");
+        return true;
     }
     // WebView consumes joystick motion before Activity.onGenericMotionEvent.
     // Intercept at dispatch so hats/sticks follow the same native path as buttons.
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e){
-        if((e.getSource()&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK&&e.getAction()==MotionEvent.ACTION_MOVE){
-            // Preserve digital hats, but suppress noisy analog rest values before merging.
-            boolean[] old=axes.get(e.getDeviceId());if(old==null)old=new boolean[4];
-            boolean[] now=ControllerDirections.update(e.getAxisValue(MotionEvent.AXIS_HAT_X),e.getAxisValue(MotionEvent.AXIS_HAT_Y),e.getAxisValue(MotionEvent.AXIS_X),e.getAxisValue(MotionEvent.AXIS_Y),old);
-            int p=player(e.getDeviceId());
-            for(int i=0;i<4;i++)if(now[i]!=old[i]){if(nativeNes!=null&&nativeNes.isRunning()){if(p>0)nativeNes.button(p,4+i,now[i]);}else js("Arcade.nativeKey("+(19+i)+","+now[i]+","+e.getDeviceId()+",true,false)");}
-            axes.put(e.getDeviceId(),now);return true;
+        int source=e.getSource();
+        boolean joystick=(source&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK||(source&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD;
+        if(!joystick||e.getAction()!=MotionEvent.ACTION_MOVE)return super.dispatchGenericMotionEvent(e);
+        int id=e.getDeviceId();
+        GamepadProfile.Profile profile=profile(id);
+        PadState st=state(id);
+        float x=e.getAxisValue(MotionEvent.AXIS_X),y=e.getAxisValue(MotionEvent.AXIS_Y);
+        long now=android.os.SystemClock.elapsedRealtime();
+        if(st.sampleStart==0)st.sampleStart=now;
+        if(now-st.sampleStart<700){
+            if(!Float.isNaN(x))st.maxX=Math.max(st.maxX,Math.abs(x));
+            if(!Float.isNaN(y))st.maxY=Math.max(st.maxY,Math.abs(y));
+        }else if(st.sampleStart>0){
+            float base=Math.max(st.maxX,st.maxY);
+            if(base<=.45f)gamepads.saveDeadzone(profile.deviceKey,Math.min(.8f,Math.max(.2f,base+.12f)));
+            st.sampleStart=-1;
         }
-        return super.dispatchGenericMotionEvent(e);
+        boolean[] old=axes.get(id);if(old==null)old=new boolean[4];
+        boolean[] dirs=ControllerDirections.update(e.getAxisValue(MotionEvent.AXIS_HAT_X),e.getAxisValue(MotionEvent.AXIS_HAT_Y),x,y,old,profile.deadzone);
+        for(int i=0;i<4;i++){
+            int action=GamepadProfile.UP+i;
+            if(profile.axisPressed(e,action,old[i]?.55f:.65f))dirs[i]=true;
+            if(dirs[i]!=st.axes[action]){st.axes[action]=dirs[i];syncAction(id,action,-1);}
+        }
+        for(int action=0;action<GamepadProfile.COUNT;action++){
+            if(action>=GamepadProfile.UP&&action<=GamepadProfile.RIGHT)continue;
+            if(!profile.hasAxis(action))continue;
+            boolean pressed=profile.axisPressed(e,action,st.axes[action]?.55f:.65f);
+            if(pressed!=st.axes[action]){st.axes[action]=pressed;syncAction(id,action,-1);}
+        }
+        axes.put(id,dirs);
+        if(gamepadMonitor&&(Math.abs(x-st.lastX)>=.3f||Math.abs(y-st.lastY)>=.3f)){
+            st.lastX=x;st.lastY=y;
+            js("Arcade.gamepadTest("+id+",\"axis\","+(Math.round(x*100)/100f)+","+(Math.round(y*100)/100f)+")");
+        }
+        return true;
     }
-    @Override public void onInputDeviceAdded(int id){}
-    @Override public void onInputDeviceChanged(int id){}
-    @Override public void onInputDeviceRemoved(int id){axes.remove(id);Integer p=players.remove(id);if(p!=null&&p>0&&nativeNes!=null&&nativeNes.isRunning())nativeNes.pause();js("Arcade.nativeDisconnected("+id+")");}
+    private void releasePad(int id){
+        PadState st=padStates.get(id);
+        Integer p=players.get(id);
+        if(st==null||p==null||p<=0)return;
+        for(int action=0;action<GamepadProfile.COUNT;action++)if(st.sent[action]){
+            if(nativeNes!=null&&nativeNes.isRunning())nativeNes.button(p,coreAction(action),false);
+            else js("Arcade.nativeKey("+action+",false,"+id+",true,false,-1)");
+        }
+    }
+    @Override public void onInputDeviceAdded(int id){releasePad(id);padStates.remove(id);axes.remove(id);}
+    @Override public void onInputDeviceChanged(int id){releasePad(id);PadState old=padStates.remove(id);if(old!=null){old.sampleStart=0;old.maxX=0;old.maxY=0;}}
+    @Override public void onInputDeviceRemoved(int id){InputDevice device=InputDevice.getDevice(id);if(captureKey!=null&&(device==null||captureKey.equals(gamepads.key(device))))clearCapture(true);releasePad(id);axes.remove(id);padStates.remove(id);Integer p=players.remove(id);if(p!=null&&p>0&&nativeNes!=null&&nativeNes.isRunning())nativeNes.pause();js("Arcade.nativeDisconnected("+id+")");}
+    private static final class PadState {
+        final int[] keys=new int[GamepadProfile.COUNT];
+        final boolean[] axes=new boolean[GamepadProfile.COUNT];
+        final boolean[] sent=new boolean[GamepadProfile.COUNT];
+        long sampleStart=0;
+        float maxX=0,maxY=0,lastX=2,lastY=2;
+    }
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
+        if(request==PICK_FOLDER){
+            if(result!=RESULT_OK||data==null||data.getData()==null){js("Arcade.libraryResult(0,0,'已取消')");return;}
+            final Uri tree=data.getData();
+            try{getContentResolver().takePersistableUriPermission(tree,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}
+            if(scanning){js("Arcade.libraryResult(0,0,'正在导入游戏，请稍候')");return;}
+            scanning=true;
+            new Thread(new Runnable(){public void run(){
+                int added=0,skipped=0;String error=null;
+                try{int[] value=importFolder(tree);added=value[0];skipped=value[1];}
+                catch(SecurityException e){error="没有读取这个文件夹的权限，请重新选择";}
+                catch(Throwable e){error=e.getMessage()==null||e.getMessage().length()==0?"导入没有完成，请重试":e.getMessage();}
+                finally{scanning=false;}
+                js("Arcade.libraryResult("+added+","+skipped+","+JSONObject.quote(error==null?"":error)+")");
+            }},"ArcadeLibrary").start();
+            return;
+        }
         if(request==PICK_FILE&&chooser!=null){Uri[] uris=null;if(result==RESULT_OK&&data!=null){if(data.getClipData()!=null){int n=data.getClipData().getItemCount();uris=new Uri[n];for(int i=0;i<n;i++)uris[i]=data.getClipData().getItemAt(i).getUri();}else if(data.getData()!=null)uris=new Uri[]{data.getData()};}chooser.onReceiveValue(uris);chooser=null;}
         if(request==EXPORT_FILE){boolean ok=false;if(result==RESULT_OK&&data!=null&&data.getData()!=null&&pendingBackup!=null){try{OutputStream out=getContentResolver().openOutputStream(data.getData());out.write(pendingBackup.getBytes("UTF-8"));out.close();ok=true;}catch(Exception ignored){}}pendingBackup=null;js("Arcade.backupResult("+ok+")");}
     }
@@ -148,8 +315,693 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private byte[] readAll(InputStream in,int max)throws IOException{try{ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1){if(out.size()+n>max)throw new IOException("Data too large");out.write(buf,0,n);}return out.toByteArray();}finally{in.close();}}
     private void atomicWrite(File f,String value)throws IOException {AtomicFile a=new AtomicFile(f);FileOutputStream out=null;try{out=a.startWrite();out.write(value.getBytes("UTF-8"));a.finishWrite(out);}catch(IOException e){if(out!=null)a.failWrite(out);throw e;}}
     private void deleteTree(File file){if(file.isDirectory()){File[] children=file.listFiles();if(children!=null)for(File child:children)deleteTree(child);}file.delete();}
+    private static final String[] DOC_COLUMNS={DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_SIZE};
+    private static final char[] HEX="0123456789abcdef".toCharArray();
+    private static final class PackEntry{String title,players,genre,version,group,aliases,cover;}
+    private static final class Candidate{String docId,name,relative,ext;long size;PackEntry meta;}
+    private static final class Cover{String docId,ext;}
+    private static String extension(String name){int i=name.lastIndexOf('.');return i<0?"":name.substring(i+1).toLowerCase(Locale.ROOT);}
+    private static String stem(String name){int i=name.lastIndexOf('.');return i<=0?name:name.substring(0,i);}
+    private static String plain(String value){return value.replace('\\','/').toLowerCase(Locale.ROOT);}
+    private static String clean(String value,int max){if(value==null)return "";value=value.trim();return value.length()>max?value.substring(0,max):value;}
+    private static long sizeLimit(String ext){return "nes".equals(ext)?8L*1024*1024:"gba".equals(ext)?64L*1024*1024:"md".equals(ext)||"sfc".equals(ext)?16L*1024*1024:"zip".equals(ext)?256L*1024*1024:0;}
+    private static final Pattern NAME_TAG=Pattern.compile("\\(([^)]*)\\)|\\[([^\\]]*)\\]");
+    private static final Pattern NAME_REV=Pattern.compile("(?i)\\brev(?:ision)?\\s*([a-z0-9]+)");
+    private static final Pattern NAME_SHORT_REV=Pattern.compile("(?i)^v(\\d+(?:\\.\\d+)?)$");
+    private static final class NameInfo{String title="";String version="原版";}
+    private static NameInfo parseName(String raw){
+        NameInfo info=new NameInfo();
+        if(raw==null||raw.length()==0)return info;
+        String base=raw.replace('_',' ');
+        Matcher m=NAME_TAG.matcher(base);
+        StringBuffer sb=new StringBuffer();
+        ArrayList<String> tags=new ArrayList<String>();
+        while(m.find()){tags.add(m.group(1)!=null?m.group(1):m.group(2));m.appendReplacement(sb," ");}
+        m.appendTail(sb);
+        String title=sb.toString().replaceAll("\\s+"," ").trim();
+        String region=null,revision=null;
+        ArrayList<String> flags=new ArrayList<String>();
+        for(int i=0;i<tags.size();i++){
+            String low=tags.get(i)==null?"":tags.get(i).toLowerCase(Locale.ROOT);
+            if(region==null)region=regionOf(low);
+            Matcher rev=NAME_REV.matcher(low);
+            if(revision==null&&rev.find())revision="Rev "+rev.group(1).toUpperCase(Locale.ROOT);
+            else if(revision==null&&NAME_SHORT_REV.matcher(low).matches())revision="v"+low.substring(1);
+            addFlag(flags,flagOf(low));
+        }
+        chineseFlags(raw,flags);
+        ArrayList<String> parts=new ArrayList<String>();
+        if(region!=null)parts.add(region);
+        if(revision!=null)parts.add(revision);
+        parts.addAll(flags);
+        if(!parts.isEmpty()){
+            StringBuilder value=new StringBuilder();
+            for(int i=0;i<parts.size();i++){if(i>0)value.append(" · ");value.append(parts.get(i));}
+            info.version=value.toString();
+        }
+        title=title.replaceAll("\\s*(无敌版|无限版|修改版|汉化版|中文版|金手指版|加强版|改版)\\s*$","").trim();
+        info.title=title.length()>0?title:raw;
+        return info;
+    }
+    private static void addFlag(ArrayList<String> flags,String flag){if(flag!=null&&!flags.contains(flag))flags.add(flag);}
+    private static void chineseFlags(String raw,ArrayList<String> flags){
+        if(raw.contains("无敌"))addFlag(flags,"无敌版");
+        if(raw.contains("无限"))addFlag(flags,"无限版");
+        if(raw.contains("汉化"))addFlag(flags,"汉化版");
+        else if(raw.contains("中文"))addFlag(flags,"中文版");
+        if(raw.contains("金手指"))addFlag(flags,"金手指版");
+        if(raw.contains("加强"))addFlag(flags,"加强版");
+        if(raw.contains("修改"))addFlag(flags,"修改版");
+        if(raw.contains("改版"))addFlag(flags,"改版");
+    }
+    private static String regionOf(String token){
+        if(token.length()==0)return null;
+        if(token.equals("u")||token.contains("usa"))return "美版";
+        if(token.equals("j")||token.contains("japan"))return "日版";
+        if(token.equals("e")||token.contains("europe")||token.contains("pal"))return "欧版";
+        if(token.equals("w")||token.contains("world"))return "世界版";
+        if(token.contains("china"))return "中国版";
+        if(token.contains("hong kong"))return "港版";
+        if(token.contains("taiwan"))return "台版";
+        if(token.equals("k")||token.contains("korea"))return "韩版";
+        if(token.contains("asia"))return "亚洲版";
+        if(token.contains("brazil"))return "巴西版";
+        if(token.contains("australia"))return "澳洲版";
+        if(token.contains("germany"))return "德版";
+        if(token.contains("france"))return "法版";
+        if(token.contains("spain"))return "西版";
+        if(token.contains("italy"))return "意版";
+        if(token.contains("russia"))return "俄版";
+        if(token.contains("canada"))return "加版";
+        return null;
+    }
+    private static String flagOf(String token){
+        if(token.contains("translation")||token.contains("translated")||token.contains("chinese")||token.startsWith("t-chi")||token.startsWith("t+chi"))return "汉化版";
+        if(token.startsWith("t-eng")||token.startsWith("t+eng"))return "英译版";
+        if(token.contains("hack"))return "修改版";
+        if(token.contains("pirate")||token.contains("bootleg"))return "盗版";
+        if(token.contains("unl")||token.contains("unlicensed"))return "非授权版";
+        if(token.contains("beta"))return "测试版";
+        if(token.contains("proto"))return "原型版";
+        if(token.contains("demo"))return "演示版";
+        if(token.contains("aftermarket"))return "同人版";
+        if(token.contains("virtual console"))return "VC版";
+        return null;
+    }
+    private static String groupKey(String system,String title){
+        try{
+            MessageDigest digest=MessageDigest.getInstance("SHA-256");
+            byte[] bytes=digest.digest((system+"|"+title.toLowerCase(Locale.ROOT)).getBytes("UTF-8"));
+            StringBuilder out=new StringBuilder(system).append('-');
+            for(int i=0;i<8;i++){int v=bytes[i]&255;out.append(HEX[v>>4]).append(HEX[v&15]);}
+            return out.toString();
+        }catch(Exception e){return null;}
+    }
+    private Uri docUri(Uri tree,String id){return DocumentsContract.buildDocumentUriUsingTree(tree,id);}
+    private byte[] readDocument(Uri tree,String id,int max)throws Exception{
+        InputStream in=getContentResolver().openInputStream(docUri(tree,id));
+        if(in==null)throw new IOException("无法读取文件");
+        return readAll(in,max);
+    }
+    private HashMap<String,PackEntry> readPack(Uri tree,String rootId,HashMap<String,PackEntry> byName)throws Exception{
+        HashMap<String,PackEntry> byPath=new HashMap<String,PackEntry>();
+        Cursor c=null;
+        try{
+            c=getContentResolver().query(DocumentsContract.buildChildDocumentsUriUsingTree(tree,rootId),DOC_COLUMNS,null,null,null);
+            if(c==null)return byPath;
+            while(c.moveToNext()){
+                String id=c.getString(0),name=c.getString(1);
+                long size=c.isNull(3)?-1:c.getLong(3);
+                if(name==null||!name.equalsIgnoreCase("pack.json")||size>8L*1024*1024)continue;
+                String text=new String(readDocument(tree,id,8*1024*1024),"UTF-8");
+                if(text.startsWith("\uFEFF"))text=text.substring(1);
+                JSONObject root;
+                try{root=new JSONObject(text);}catch(Exception e){throw new IOException("pack.json 格式不正确");}
+                JSONArray list=root.optJSONArray("games");
+                if(list==null)break;
+                for(int i=0;i<list.length()&&i<5000;i++){
+                    JSONObject item=list.optJSONObject(i);
+                    if(item==null)continue;
+                    String file=clean(item.optString("file",""),200);
+                    if(file.length()==0)continue;
+                    PackEntry entry=new PackEntry();
+                    entry.title=clean(item.optString("title",""),60);entry.players=clean(item.optString("players",""),20);
+                    entry.genre=clean(item.optString("genre",""),20);entry.version=clean(item.optString("version",""),30);
+                    entry.group=clean(item.optString("group",""),80);entry.aliases=clean(item.optString("aliases",""),200);
+                    entry.cover=clean(item.optString("cover",""),200);
+                    String path=plain(file);while(path.startsWith("./"))path=path.substring(2);
+                    byPath.put(path,entry);
+                    int slash=path.lastIndexOf('/');
+                    if(slash>=0)byName.put(path.substring(slash+1),entry);
+                }
+                break;
+            }
+        }finally{if(c!=null)c.close();}
+        return byPath;
+    }
+    private HashMap<String,Cover> readCovers(Uri tree,String rootId)throws Exception{
+        HashMap<String,Cover> covers=new HashMap<String,Cover>();
+        String coversId=null;Cursor c=null;
+        try{
+            c=getContentResolver().query(DocumentsContract.buildChildDocumentsUriUsingTree(tree,rootId),DOC_COLUMNS,null,null,null);
+            if(c==null)return covers;
+            while(c.moveToNext()) {
+                String name=c.getString(1),mime=c.getString(2);
+                if(name!=null&&"covers".equalsIgnoreCase(name)&&DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)){coversId=c.getString(0);break;}
+            }
+        }finally{if(c!=null)c.close();}
+        if(coversId==null)return covers;
+        c=null;
+        try{
+            c=getContentResolver().query(DocumentsContract.buildChildDocumentsUriUsingTree(tree,coversId),DOC_COLUMNS,null,null,null);
+            if(c==null)return covers;
+            while(c.moveToNext()){
+                String id=c.getString(0),name=c.getString(1);
+                long size=c.isNull(3)?-1:c.getLong(3);
+                if(name==null)continue;
+                String ext=extension(name);
+                if(!("png".equals(ext)||"jpg".equals(ext)||"jpeg".equals(ext)||"webp".equals(ext))||size<0||size>128*1024)continue;
+                Cover cover=new Cover();cover.docId=id;cover.ext=ext;covers.put(stem(name).toLowerCase(Locale.ROOT),cover);
+            }
+        }finally{if(c!=null)c.close();}
+        return covers;
+    }
+    private void scanTree(Uri tree,String parentId,String prefix,int depth,ArrayList<Candidate> out,HashMap<String,PackEntry> byPath,HashMap<String,PackEntry> byName)throws Exception{
+        if(depth>MAX_SCAN_DEPTH||out.size()>=MAX_LIBRARY)return;
+        Cursor c=null;
+        try{
+            c=getContentResolver().query(DocumentsContract.buildChildDocumentsUriUsingTree(tree,parentId),DOC_COLUMNS,null,null,null);
+            if(c==null)return;
+            while(c.moveToNext()&&out.size()<MAX_LIBRARY){
+                String id=c.getString(0),name=c.getString(1),mime=c.getString(2);
+                long size=c.isNull(3)?-1:c.getLong(3);
+                if(name==null||name.length()==0||name.charAt(0)=='.')continue;
+                if(DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)){
+                    if(depth<MAX_SCAN_DEPTH&&!"covers".equalsIgnoreCase(name))scanTree(tree,id,prefix+name+"/",depth+1,out,byPath,byName);
+                    continue;
+                }
+                String ext=extension(name);long limit=sizeLimit(ext);
+                if(limit==0||size<0||size>limit)continue;
+                Candidate candidate=new Candidate();
+                candidate.docId=id;candidate.name=name;candidate.ext=ext;candidate.size=size;
+                candidate.relative=plain(prefix+name);
+                candidate.meta=byPath.get(candidate.relative);
+                if(candidate.meta==null)candidate.meta=byName.get(name.toLowerCase(Locale.ROOT));
+                out.add(candidate);
+            }
+        }finally{if(c!=null)c.close();}
+    }
+    private String saveCover(Uri tree,HashMap<String,Cover> covers,String name,String hash){
+        if(name==null||name.length()==0)return null;
+        int slash=name.lastIndexOf('/');String file=slash>=0?name.substring(slash+1):name;
+        Cover cover=covers.get(stem(file).toLowerCase(Locale.ROOT));
+        if(cover==null)return null;
+        try{
+            byte[] data=readDocument(tree,cover.docId,128*1024);
+            File dir=new File(getFilesDir(),"library/covers");
+            if(!dir.isDirectory()&&!dir.mkdirs())return null;
+            File temp=new File(dir,hash+".tmp");
+            FileOutputStream out=new FileOutputStream(temp);
+            try{out.write(data);out.getFD().sync();}finally{out.close();}
+            File dest=new File(dir,hash+"."+cover.ext);
+            if(dest.exists())dest.delete();
+            return temp.renameTo(dest)?hash+"."+cover.ext:null;
+        }catch(Exception e){return null;}
+    }
+    private String copyRom(Uri tree,Candidate candidate,File target)throws Exception{
+        MessageDigest digest=MessageDigest.getInstance("SHA-256");
+        InputStream in=getContentResolver().openInputStream(docUri(tree,candidate.docId));
+        if(in==null)throw new IOException("无法读取 "+candidate.name);
+        FileOutputStream out=null;long total=0;
+        try{
+            out=new FileOutputStream(target);byte[] buffer=new byte[65536];int n;
+            while((n=in.read(buffer))!=-1){total+=n;if(total>candidate.size)throw new IOException("文件在读取过程中发生变化，请重试");out.write(buffer,0,n);digest.update(buffer,0,n);}
+            out.flush();out.getFD().sync();
+        }finally{try{in.close();}catch(Exception ignored){}if(out!=null)try{out.close();}catch(Exception ignored){}}
+        if(total!=candidate.size){target.delete();throw new IOException("游戏文件读取不完整，请重试");}
+        byte[] bytes=digest.digest();StringBuilder hex=new StringBuilder();
+        for(byte b:bytes)hex.append(HEX[(b>>4)&15]).append(HEX[b&15]);
+        return hex.toString();
+    }
+    private static String[] destination(String ext,String hash){
+        if("nes".equals(ext))return new String[]{"library/roms",hash+".nes"};
+        if("zip".equals(ext))return new String[]{"arcade/roms","user-"+hash.substring(0,32)+".zip"};
+        return new String[]{ext+"/roms","user-"+hash.substring(0,32)+"."+ext};
+    }
+    private JSONObject libraryRecord(Candidate candidate,String hash,String path,String cover)throws Exception{
+        PackEntry meta=candidate.meta;
+        String id="user-"+hash.substring(0,16);
+        String system="nes".equals(candidate.ext)?"nes":("zip".equals(candidate.ext)?"arcade":candidate.ext);
+        NameInfo info=parseName(stem(candidate.name));
+        String title=meta!=null&&meta.title.length()>0?meta.title:(info.title.length()>0?info.title:clean(stem(candidate.name),60));
+        String group=meta!=null?meta.group:"";
+        if(!group.matches("[a-z0-9-]{1,100}"))group=groupKey(system,title);
+        if(group==null||!group.matches("[a-z0-9-]{1,100}"))group=id;
+        String version=meta!=null&&meta.version.length()>0?meta.version:info.version;
+        JSONObject record=new JSONObject();
+        record.put("id",id);record.put("hash",hash);record.put("title",title);
+        record.put("aliases",meta!=null?meta.aliases:"");
+        record.put("genre",meta!=null&&meta.genre.length()>0?meta.genre:"其他");
+        record.put("players",meta!=null&&meta.players.length()>0?meta.players:"待确认");
+        record.put("version",version);
+        record.put("group",group);record.put("path",path);
+        record.put("src",candidate.relative);record.put("size",candidate.size);
+        if(!"nes".equals(candidate.ext))record.put("system",system);
+        if(cover!=null)record.put("cover",cover);
+        return record;
+    }
+    private JSONArray readLibraryRecords()throws IOException{
+        File file=new File(storeDir,"library.json");
+        JSONArray out=new JSONArray();
+        if(!file.isFile())return out;
+        try{
+            JSONObject root=new JSONObject(new String(readAll(new FileInputStream(file),32*1024*1024),"UTF-8"));
+            JSONArray list=root.optJSONArray("games");
+            if(list!=null)for(int i=0;i<list.length();i++){JSONObject record=list.optJSONObject(i);if(record!=null)out.put(record);}
+            return out;
+        }catch(Exception e){throw new IOException("游戏库记录无法读取，请重试");}
+    }
+    private int[] importFolder(Uri tree)throws Exception{
+        String rootId=DocumentsContract.getTreeDocumentId(tree);
+        HashMap<String,PackEntry> byName=new HashMap<String,PackEntry>();
+        HashMap<String,PackEntry> byPath=readPack(tree,rootId,byName);
+        HashMap<String,Cover> covers=readCovers(tree,rootId);
+        ArrayList<Candidate> found=new ArrayList<Candidate>();
+        scanTree(tree,rootId,"",0,found,byPath,byName);
+        if(found.isEmpty())throw new IOException("这个文件夹里没有找到可用的游戏文件");
+        JSONArray records=readLibraryRecords();
+        HashSet<String> known=new HashSet<String>(),knownShapes=new HashSet<String>();
+        for(int i=0;i<records.length();i++){
+            JSONObject record=records.optJSONObject(i);
+            if(record==null)continue;
+            if(record.optString("hash","").length()==64)known.add(record.optString("hash"));
+            String src=record.optString("src","");long size=record.optLong("size",-1);
+            if(src.length()>0&&size>=0)knownShapes.add(src+"|"+size);
+        }
+        long need=64L*1024*1024;
+        for(Candidate candidate:found)if(!knownShapes.contains(candidate.relative+"|"+candidate.size))need+=candidate.size;
+        if(need>new StatFs(getFilesDir().getAbsolutePath()).getAvailableBytes())throw new IOException("电视剩余空间不足，需要约"+(need/1024/1024)+"MB，请清理后重试");
+        File staging=new File(getFilesDir(),"library/staging");
+        deleteTree(staging);
+        if(!staging.mkdirs()&&!staging.isDirectory())throw new IOException("无法准备导入目录");
+        int added=0,skipped=0;
+        try{
+            for(int i=0;i<found.size();i++){
+                Candidate candidate=found.get(i);
+                String shape=candidate.relative+"|"+candidate.size;
+                if(knownShapes.contains(shape)){skipped++;continue;}
+                File temp=new File(staging,"part-"+i);
+                String hash=copyRom(tree,candidate,temp);
+                if(known.contains(hash)){temp.delete();knownShapes.add(shape);skipped++;continue;}
+                String[] dest=destination(candidate.ext,hash);
+                File folder=new File(getFilesDir(),dest[0]);
+                if(!folder.isDirectory()&&!folder.mkdirs())throw new IOException("无法创建游戏文件夹");
+                File rom=new File(folder,dest[1]);
+                if(rom.exists())rom.delete();
+                if(!temp.renameTo(rom))throw new IOException("写入游戏文件失败，请检查存储空间");
+                String cover=candidate.meta!=null?saveCover(tree,covers,candidate.meta.cover,hash):null;
+                if(cover==null)cover=saveCover(tree,covers,candidate.name,hash);
+                records.put(libraryRecord(candidate,hash,dest[0]+"/"+dest[1],cover));
+                known.add(hash);knownShapes.add(shape);added++;
+            }
+        }finally{deleteTree(staging);}
+        synchronized(storeLock){atomicWrite(new File(storeDir,"library.json"),"{\"schema\":1,\"games\":"+records.toString()+"}");}
+        return new int[]{added,skipped};
+    }
+    // ---------- LAN: phone gamepad + backup ----------
+    private static String message(Throwable e){String text=e.getMessage();return text==null||text.length()==0?e.getClass().getSimpleName():text;}
+    private static long treeSize(File file){if(file==null)return 0;if(file.isFile())return file.length();long total=0;File[] children=file.listFiles();if(children!=null)for(File child:children)total+=treeSize(child);return total;}
+    private static String lanRandomToken(){String chars="abcdefghijklmnopqrstuvwxyz0123456789";StringBuilder out=new StringBuilder(6);for(int i=0;i<6;i++)out.append(chars.charAt(LAN_RANDOM.nextInt(chars.length())));return out.toString();}
+    private static String lanLocalAddress(){
+        try{
+            Enumeration<NetworkInterface> interfaces=NetworkInterface.getNetworkInterfaces();
+            while(interfaces!=null&&interfaces.hasMoreElements()){
+                NetworkInterface net=interfaces.nextElement();
+                if(!net.isUp()||net.isLoopback())continue;
+                Enumeration<InetAddress> addresses=net.getInetAddresses();
+                while(addresses.hasMoreElements()){
+                    InetAddress address=addresses.nextElement();
+                    if(address instanceof Inet4Address&&!address.isLoopbackAddress()&&!address.isLinkLocalAddress())return address.getHostAddress();
+                }
+            }
+        }catch(Throwable ignored){}
+        return "127.0.0.1";
+    }
+    private static boolean lanTokenOk(String value,String token){return value!=null&&token!=null&&value.equals(token);}
+    private static String lanParam(String query,String key){
+        if(query==null||query.length()==0)return null;
+        String[] pairs=query.split("&");
+        for(String pair:pairs){int at=pair.indexOf('=');if(at<0)continue;if(pair.substring(0,at).equals(key))return pair.substring(at+1);}
+        return null;
+    }
+    private static int lanInt(String value,int fallback){try{return value==null?fallback:Integer.parseInt(value.trim());}catch(NumberFormatException e){return fallback;}}
+    private String lanJson(){
+        try{return new JSONObject().put("running",true).put("url",lanPadUrl).put("backupUrl",lanBackupUrl).put("restoreUrl",lanRestoreUrl).put("port",lanPort).put("token",lanToken).toString();}
+        catch(Exception e){return "{\"running\":false}";}
+    }
+    private String lanStart(){
+        synchronized(lanLock){
+            try{
+                if(lanSocket!=null&&!lanSocket.isClosed()){lanRefreshAddress();return lanJson();}
+                ServerSocket server=new ServerSocket(0,16,InetAddress.getByName("0.0.0.0"));
+                String token=lanRandomToken();
+                lanSocket=server;lanToken=token;lanAddress=lanLocalAddress();lanPort=server.getLocalPort();
+                lanPadUrl="http://"+lanAddress+":"+lanPort+"/pad/"+token;
+                lanBackupUrl="http://"+lanAddress+":"+lanPort+"/backup/"+token;
+                lanRestoreUrl="http://"+lanAddress+":"+lanPort+"/restore/"+token;
+                synchronized(lanInputLock){lanHeldKeys.clear();lanInputActivity=android.os.SystemClock.elapsedRealtime();lanPlayerSeen[0]=false;lanPlayerSeen[1]=false;}
+                final ServerSocket listener=server;
+                Thread thread=new Thread(new Runnable(){public void run(){lanAccept(listener);}},"ArcadeLan");
+                thread.setDaemon(true);lanThread=thread;thread.start();
+                lanWatchdogOn=true;uiHandler.removeCallbacks(lanWatchdog);uiHandler.postDelayed(lanWatchdog,2000);
+                return lanJson();
+            }catch(Throwable e){
+                lanStop();
+                try{return new JSONObject().put("running",false).put("error",message(e)).toString();}catch(Exception ignored){return "{\"running\":false}";}
+            }
+        }
+    }
+    private String lanInfoJson(){synchronized(lanLock){if(lanSocket==null||lanSocket.isClosed())return "{\"running\":false}";lanRefreshAddress();return lanJson();}}
+    private void lanRefreshAddress(){
+        String address=lanLocalAddress();
+        if(address==null||address.length()==0||address.equals(lanAddress))return;
+        lanAddress=address;
+        lanPadUrl="http://"+address+":"+lanPort+"/pad/"+lanToken;
+        lanBackupUrl="http://"+address+":"+lanPort+"/backup/"+lanToken;
+        lanRestoreUrl="http://"+address+":"+lanPort+"/restore/"+lanToken;
+    }
+    private void lanStop(){
+        synchronized(lanLock){
+            lanWatchdogOn=false;uiHandler.removeCallbacks(lanWatchdog);lanRemoteRelease();
+            ServerSocket server=lanSocket;lanSocket=null;
+            if(server!=null){try{server.close();}catch(IOException ignored){}}
+            Thread thread=lanThread;lanThread=null;
+            if(thread!=null&&thread!=Thread.currentThread()){try{thread.join(500);}catch(InterruptedException e){Thread.currentThread().interrupt();}}
+            lanToken=null;lanAddress=null;lanPadUrl=null;lanBackupUrl=null;lanRestoreUrl=null;lanPort=0;
+            File temp=lanTempFile;lanTempFile=null;
+            if(temp!=null)temp.delete();
+        }
+    }
+    private void lanAccept(ServerSocket server){
+        while(!server.isClosed()){
+            Socket client;
+            try{client=server.accept();}catch(IOException e){break;}
+            final Socket socket=client;
+            Thread worker=new Thread(new Runnable(){public void run(){lanHandle(socket);}},"ArcadeLanRequest");
+            worker.setDaemon(true);worker.start();
+        }
+    }
+    private static String lanReadLine(InputStream in)throws IOException{
+        ByteArrayOutputStream out=new ByteArrayOutputStream();
+        int c;
+        while((c=in.read())!=-1){
+            if(c=='\n')break;
+            if(c!='\r')out.write(c);
+            if(out.size()>8192)throw new IOException("请求头过长");
+        }
+        if(c==-1&&out.size()==0)return null;
+        return new String(out.toByteArray(),"UTF-8");
+    }
+    private static byte[] lanReadBody(InputStream in,int length)throws IOException{
+        byte[] body=new byte[length];
+        int offset=0;
+        while(offset<length){int n=in.read(body,offset,length-offset);if(n<=0)throw new IOException("请求内容不完整");offset+=n;}
+        return body;
+    }
+    private void lanRemoteRelease(){
+        int[] keys;
+        synchronized(lanInputLock){keys=new int[lanHeldKeys.size()];int i=0;for(Integer key:lanHeldKeys)keys[i++]=key.intValue();lanHeldKeys.clear();}
+        for(int key:keys){try{if(nativeNes!=null)nativeNes.button(key/16+1,key%16,false);}catch(Throwable ignored){}}
+    }
+    private final Runnable lanWatchdog=new Runnable(){public void run(){
+        if(!lanWatchdogOn)return;
+        boolean stale=false;
+        synchronized(lanInputLock){stale=lanInputActivity>0&&android.os.SystemClock.elapsedRealtime()-lanInputActivity>6000;}
+        if(stale)lanRemoteRelease();
+        if(lanWatchdogOn)uiHandler.postDelayed(this,2000);
+    }};
+    private void lanHandle(Socket socket){
+        try{
+            socket.setSoTimeout(8000);
+            BufferedInputStream reader=new BufferedInputStream(socket.getInputStream());
+            String request=lanReadLine(reader);
+            if(request==null)return;
+            int contentLength=0;
+            for(int i=0;i<64;i++){
+                String header=lanReadLine(reader);
+                if(header==null||header.length()==0)break;
+                int at=header.indexOf(':');
+                if(at>0&&header.substring(0,at).trim().equalsIgnoreCase("Content-Length"))contentLength=lanInt(header.substring(at+1),-1);
+            }
+            String[] parts=request.split(" ");
+            if(parts.length<2){lanWrite(socket,400,"错误请求");return;}
+            String method=parts[0],target=parts[1],query="";
+            int mark=target.indexOf('?');
+            if(mark>=0){query=target.substring(mark+1);target=target.substring(0,mark);}
+            String token=lanToken;
+            if(target.startsWith("/pad/")){
+                if(!lanTokenOk(target.substring(5),token)){lanWrite(socket,403,"禁止访问");return;}
+                lanWriteBytes(socket,200,"text/html; charset=utf-8",PAD_PAGE.replace("__TOKEN__",token).getBytes("UTF-8"),null);
+                return;
+            }
+            if(target.startsWith("/input/")){
+                if(!lanTokenOk(target.substring(7),token)){lanWrite(socket,403,"禁止访问");return;}
+                int player=lanInt(lanParam(query,"p"),0),button=lanInt(lanParam(query,"b"),-1),down=lanInt(lanParam(query,"d"),0);
+                if((player!=1&&player!=2)||button<0||button>11){lanWrite(socket,400,"参数错误");return;}
+                boolean announce;
+                synchronized(lanInputLock){
+                    lanInputActivity=android.os.SystemClock.elapsedRealtime();
+                    if(down!=0)lanHeldKeys.add((player-1)*16+button);else lanHeldKeys.remove((player-1)*16+button);
+                    announce=!lanPlayerSeen[player-1];
+                    if(announce)lanPlayerSeen[player-1]=true;
+                }
+                try{if(nativeNes!=null)nativeNes.button(player,button,down!=0);}catch(Throwable ignored){}
+                if(announce)js("Arcade.remotePlayer("+player+")");
+                lanWrite(socket,200,"ok");
+                return;
+            }
+            if(target.startsWith("/ping/")){
+                if(!lanTokenOk(target.substring(6),token)){lanWrite(socket,403,"禁止访问");return;}
+                synchronized(lanInputLock){lanInputActivity=android.os.SystemClock.elapsedRealtime();}
+                lanWrite(socket,200,"ok");
+                return;
+            }
+            if(target.startsWith("/backup/")){
+                if(!lanTokenOk(target.substring(8),token)){lanWrite(socket,403,"禁止访问");return;}
+                File zip=null;
+                try{
+                    zip=lanBuildBackup();
+                    byte[] data=readAll(new FileInputStream(zip),64*1024*1024);
+                    lanWriteBytes(socket,200,"application/json; charset=utf-8",data,"childhood-arcade-backup.json");
+                }catch(Throwable e){
+                    lanWrite(socket,500,"备份生成失败，请稍后重试");
+                }finally{
+                    if(zip!=null)zip.delete();
+                    if(lanTempFile==zip)lanTempFile=null;
+                }
+                return;
+            }
+            if(target.startsWith("/restore/")){
+                if(!lanTokenOk(target.substring(9),token)){lanWrite(socket,403,"禁止访问");return;}
+                if("GET".equals(method)){
+                    lanWriteBytes(socket,200,"text/html; charset=utf-8",RESTORE_PAGE.replace("__TOKEN__",token).getBytes("UTF-8"),null);
+                    return;
+                }
+                if(!"POST".equals(method)){lanWrite(socket,405,"方法不支持");return;}
+                if(contentLength>64*1024*1024){lanWrite(socket,413,"备份文件过大");return;}
+                if(contentLength<=0){lanWrite(socket,400,"备份文件无效");return;}
+                String text=new String(lanReadBody(reader,contentLength),"UTF-8");
+                boolean valid=false;
+                try{
+                    JSONObject root=new JSONObject(text);
+                    valid=root.optInt("schema",-1)==1&&"childhood-arcade".equals(root.optString("app",null))&&root.opt("entries") instanceof JSONArray;
+                }catch(Exception ignored){}
+                if(!valid){lanWrite(socket,400,"不是有效的童年游戏厅备份");return;}
+                js("Arcade.restoreFromPhone("+JSONObject.quote(text)+")");
+                lanWriteBytes(socket,200,"text/html; charset=utf-8",RESTORE_DONE.getBytes("UTF-8"),null);
+                return;
+            }
+            lanWrite(socket,404,"未找到");
+        }catch(Throwable ignored){
+        }finally{try{socket.close();}catch(IOException ignored){}}
+    }
+    private File lanBuildBackup()throws Exception{
+        JSONArray entries=new JSONArray();
+        File[] files=storeDir.listFiles();
+        if(files!=null)for(File file:files){
+            String name=file.getName();
+            if(!file.isFile()||!name.endsWith(".json"))continue;
+            String key=name.substring(0,name.length()-5);
+            if(!(key.equals("prefs")||key.startsWith("battery:")||key.matches("slot:[a-f0-9]{64}:(?:[0-3]|auto)")))continue;
+            try{
+                String text=new String(readAll(new FileInputStream(file),32*1024*1024),"UTF-8");
+                entries.put(new JSONObject().put("key",key).put("value",new JSONObject(text)));
+            }catch(Exception ignored){}
+        }
+        JSONObject root=new JSONObject().put("schema",1).put("app","childhood-arcade").put("created",System.currentTimeMillis()).put("entries",entries);
+        File target=File.createTempFile("arcade-backup-",".json",getCacheDir());
+        lanTempFile=target;
+        FileOutputStream out=new FileOutputStream(target);
+        try{out.write(root.toString().getBytes("UTF-8"));}finally{out.close();}
+        return target;
+    }
+    private static void lanWrite(Socket socket,int code,String text){try{lanWriteBytes(socket,code,"text/plain; charset=utf-8",text.getBytes("UTF-8"),null);}catch(IOException ignored){}}
+    private static void lanWriteBytes(Socket socket,int code,String type,byte[] body,String filename)throws IOException{
+        OutputStream out=socket.getOutputStream();
+        String status=code==200?"OK":code==400?"Bad Request":code==403?"Forbidden":code==404?"Not Found":code==405?"Method Not Allowed":code==413?"Payload Too Large":"Internal Server Error";
+        StringBuilder head=new StringBuilder("HTTP/1.1 ").append(code).append(' ').append(status).append("\r\n");
+        head.append("Content-Type: ").append(type).append("\r\n");
+        head.append("Content-Length: ").append(body.length).append("\r\n");
+        head.append("Cache-Control: no-store\r\n");
+        if(filename!=null)head.append("Content-Disposition: attachment; filename=\"").append(filename).append("\"\r\n");
+        head.append("Connection: close\r\n\r\n");
+        out.write(head.toString().getBytes("UTF-8"));
+        out.write(body);out.flush();
+    }
+    private static final String PAD_PAGE="<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
+        +"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,user-scalable=no\">"
+        +"<title>童年游戏厅手柄</title><style>"
+        +"*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}"
+        +"html,body{margin:0;height:100%;background:#0d0d10;color:#f3efe3;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;overflow:hidden;touch-action:none}"
+        +"body{display:flex;flex-direction:column;justify-content:space-between;padding:12px;gap:8px;height:100vh}"
+        +"header{text-align:center;font-size:16px;letter-spacing:2px;color:#f7c948}"
+        +"header span{display:block;margin-top:4px;font-size:11px;letter-spacing:0;color:#8f8f9d}"
+        +".row{display:flex;justify-content:space-between;align-items:center;gap:10px}"
+        +"#lat{flex:1;min-width:74px;font-size:11px;color:#8f8f9d}"
+        +".players{display:flex;gap:8px}"
+        +".players .btn{width:56px;height:36px;font-size:13px;border-radius:18px}"
+        +"#burst{width:70px;height:36px;font-size:12px;border-radius:18px}"
+        +".controls{justify-content:space-around;padding:0 4px}"
+        +".pad,.face{display:grid;grid-template-columns:repeat(3,min(62px,14.5vw));grid-template-rows:repeat(3,min(62px,14.5vw));gap:6px;margin:0 auto}"
+        +".joy{position:relative;width:min(112px,30vw);height:min(112px,30vw);border-radius:50%;background:#1a1a21;border:2px solid #3f3f4d;touch-action:none;user-select:none;-webkit-user-select:none;flex:0 0 auto}"
+        +".knob{position:absolute;left:50%;top:50%;width:46%;height:46%;margin:-23% 0 0 -23%;border-radius:50%;background:#f7c948;opacity:.85;pointer-events:none}"
+        +".btn{display:flex;align-items:center;justify-content:center;background:#23232b;border:1px solid #3f3f4d;border-radius:16px;color:#f3efe3;font-size:20px;font-weight:700;touch-action:none;user-select:none;-webkit-user-select:none;padding:0}"
+        +".btn.on{background:#f7c948;border-color:#f7c948;color:#141410}"
+        +".shoulder{flex:1;height:52px;font-size:16px;border-radius:14px}"
+        +".meta{justify-content:center;gap:28px}"
+        +".meta .btn{width:108px;height:48px;font-size:14px;border-radius:24px}"
+        +"#up{grid-area:1/2}#left{grid-area:2/1}#right{grid-area:2/3}#down{grid-area:3/2}"
+        +"#x{grid-area:1/2}#y{grid-area:2/1}#a{grid-area:2/3}#b{grid-area:3/2}"
+        +"</style></head><body>"
+        +"<header>已连接童年游戏厅<span>按住按钮控制游戏 · 手机需与电视同一网络</span></header>"
+        +"<div class='row topbar'><span id='lat'>连接中…</span>"
+        +"<div class='players'><button class='btn pbtn on' data-p='1'>1P</button><button class='btn pbtn' data-p='2'>2P</button></div>"
+        +"<button class='btn' id='burst'>连发关</button></div>"
+        +"<div class='row controls'><div class='pad'>"
+        +"<button class='btn' id='up' data-b='4'>▲</button>"
+        +"<button class='btn' id='left' data-b='6'>◀</button>"
+        +"<button class='btn' id='right' data-b='7'>▶</button>"
+        +"<button class='btn' id='down' data-b='5'>▼</button>"
+        +"</div><div class='joy' id='joy'><div class='knob' id='knob'></div></div></div>"
+        +"<div class='row'>"
+        +"<button class='btn shoulder' data-b='10'>L</button>"
+        +"<button class='btn shoulder' data-b='11'>R</button>"
+        +"</div>"
+        +"<div class='row'><div class='face'>"
+        +"<button class='btn' id='x' data-b='8'>X</button>"
+        +"<button class='btn' id='y' data-b='9'>Y</button>"
+        +"<button class='btn' id='a' data-b='0'>A</button>"
+        +"<button class='btn' id='b' data-b='1'>B</button>"
+        +"</div></div>"
+        +"<div class='row meta'>"
+        +"<button class='btn' data-b='2'>SELECT</button>"
+        +"<button class='btn' data-b='3'>START</button>"
+        +"</div>"
+        +"<script>(function(){var T='__TOKEN__',P=1,active={},burst=false,burstTimers={},offline=false;"
+        +"var nodes=document.querySelectorAll('[data-b]'),pnodes=document.querySelectorAll('[data-p]'),lat=document.getElementById('lat'),burstBtn=document.getElementById('burst');"
+        +"try{if(localStorage.getItem('padPlayer')==='2')P=2;}catch(err){}"
+        +"function status(text,fail){lat.textContent=text;lat.style.color=fail?'#ff6b6b':'#8f8f9d';}"
+        +"function vibrate(){try{if(navigator.vibrate)navigator.vibrate(15);}catch(err){}}"
+        +"function send(b,d){if(offline)return;var t0=performance.now();fetch('/input/'+T+'?p='+P+'&b='+b+'&d='+d,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('http');offline=false;status('延迟 '+Math.round(performance.now()-t0)+' ms',false);}).catch(function(){offline=true;status('已断开',true);releaseAll();});}"
+        +"function startBurst(b){if(burstTimers[b])return;var d=1;send(b,1);burstTimers[b]=setInterval(function(){d=d?0:1;send(b,d);},90);}"
+        +"function stopBurst(b,keep){if(burstTimers[b]){clearInterval(burstTimers[b]);delete burstTimers[b];}send(b,keep?1:0);}"
+        +"function padDown(b){b=''+b;if(active[b])return;active[b]=1;if(burst&&(b==='0'||b==='1'||b==='8'||b==='9'))startBurst(b);else send(b,1);}"
+        +"function padUp(b){b=''+b;if(!active[b])return;active[b]=0;if(burstTimers[b])stopBurst(b,false);else send(b,0);}"
+        +"function down(el,e){if(e)e.preventDefault();var b=el.getAttribute('data-b');if(active[b])return;el.classList.add('on');vibrate();padDown(b);}"
+        +"function up(el,e){if(e)e.preventDefault();var b=el.getAttribute('data-b');if(!active[b])return;el.classList.remove('on');padUp(b);}"
+        +"function applyBurst(on){burst=on;burstBtn.textContent=on?'连发开':'连发关';burstBtn.classList.toggle('on',on);var keys=['0','1','8','9'];for(var i=0;i<keys.length;i++){var b=keys[i];if(active[b]){if(on)startBurst(b);else stopBurst(b,true);}}}"
+        +"burstBtn.addEventListener('click',function(){vibrate();applyBurst(!burst);});"
+        +"for(var i=0;i<nodes.length;i++){(function(el){"
+        +"if(window.PointerEvent){"
+        +"el.addEventListener('pointerdown',function(e){down(el,e);});"
+        +"el.addEventListener('pointerup',function(e){up(el,e);});"
+        +"el.addEventListener('pointercancel',function(e){up(el,e);});"
+        +"el.addEventListener('pointerleave',function(e){up(el,e);});"
+        +"}else{"
+        +"el.addEventListener('touchstart',function(e){down(el,e);},{passive:false});"
+        +"el.addEventListener('touchend',function(e){up(el,e);},{passive:false});"
+        +"el.addEventListener('touchcancel',function(e){up(el,e);},{passive:false});"
+        +"}})(nodes[i]);}"
+        +"for(var j=0;j<pnodes.length;j++){(function(el){"
+        +"el.classList.toggle('on',Number(el.getAttribute('data-p'))===P);"
+        +"el.addEventListener('click',function(){releaseAll();P=Number(el.getAttribute('data-p'));try{localStorage.setItem('padPlayer',''+P);}catch(err){}for(var k=0;k<pnodes.length;k++)pnodes[k].classList.toggle('on',pnodes[k]===el);vibrate();});"
+        +"})(pnodes[j]);}"
+        +"var joy=document.getElementById('joy'),knob=document.getElementById('knob'),joyId=null,joyState={left:0,right:0,up:0,down:0},JOY={left:6,right:7,up:4,down:5};"
+        +"function joySet(name,on){on=on?1:0;if(joyState[name]===on)return;joyState[name]=on;if(on)padDown(JOY[name]);else padUp(JOY[name]);}"
+        +"function joyReset(){joySet('left',0);joySet('right',0);joySet('up',0);joySet('down',0);knob.style.transform='';joyId=null;}"
+        +"function joyMove(x,y){var rect=joy.getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2,rad=rect.width/2,dx=x-cx,dy=y-cy,dist=Math.sqrt(dx*dx+dy*dy),limit=rad*0.55;if(dist>limit){dx=dx/dist*limit;dy=dy/dist*limit;}knob.style.transform='translate('+dx+'px,'+dy+'px)';var threshold=rad*0.28;joySet('right',dx>threshold);joySet('left',dx<-threshold);joySet('down',dy>threshold);joySet('up',dy<-threshold);}"
+        +"if(window.PointerEvent){"
+        +"joy.addEventListener('pointerdown',function(e){e.preventDefault();if(joyId!==null)return;joyId=e.pointerId;try{joy.setPointerCapture(e.pointerId);}catch(err){}joyMove(e.clientX,e.clientY);});"
+        +"joy.addEventListener('pointermove',function(e){if(joyId!==e.pointerId)return;e.preventDefault();joyMove(e.clientX,e.clientY);});"
+        +"joy.addEventListener('pointerup',function(e){if(joyId===e.pointerId)joyReset();});"
+        +"joy.addEventListener('pointercancel',function(e){if(joyId===e.pointerId)joyReset();});"
+        +"}else{"
+        +"joy.addEventListener('touchstart',function(e){e.preventDefault();var t=e.changedTouches[0];if(t){joyId=t.identifier;joyMove(t.clientX,t.clientY);}},{passive:false});"
+        +"joy.addEventListener('touchmove',function(e){e.preventDefault();var t=e.changedTouches[0];if(t)joyMove(t.clientX,t.clientY);},{passive:false});"
+        +"joy.addEventListener('touchend',function(e){e.preventDefault();joyReset();},{passive:false});"
+        +"joy.addEventListener('touchcancel',function(e){e.preventDefault();joyReset();},{passive:false});"
+        +"}"
+        +"function releaseAll(){for(var i=0;i<nodes.length;i++)up(nodes[i],null);joyReset();}"
+        +"window.addEventListener('blur',releaseAll);"
+        +"document.addEventListener('visibilitychange',function(){if(document.hidden)releaseAll();});"
+        +"window.addEventListener('pagehide',releaseAll);"
+        +"setInterval(function(){fetch('/ping/'+T,{cache:'no-store'}).then(function(r){if(r.ok){offline=false;if(lat.textContent==='已断开')status('已连接',false);}}).catch(function(){offline=true;status('已断开',true);releaseAll();});},2000);"
+        +"})();</script></body></html>";
+    private static final String RESTORE_PAGE="<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
+        +"<meta name='viewport' content='width=device-width,initial-scale=1,user-scalable=no'>"
+        +"<title>恢复游戏厅备份</title><style>"
+        +"*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}"
+        +"html,body{margin:0;min-height:100%;background:#0d0d10;color:#f3efe3;font-family:-apple-system,'Segoe UI',Roboto,sans-serif}"
+        +"body{padding:26px 18px;display:flex;flex-direction:column;gap:18px}"
+        +"h1{margin:0;font-size:19px;letter-spacing:1px;color:#f7c948;text-align:center}"
+        +"p{margin:0;font-size:13px;line-height:1.7;color:#9a9aa8;text-align:center}"
+        +"label{display:flex;align-items:center;justify-content:center;min-height:76px;border:1px dashed #4a4a58;border-radius:18px;background:#18181f;font-size:16px;color:#d8d4c8;padding:14px}"
+        +"input[type=file]{position:absolute;opacity:0;width:1px;height:1px}"
+        +"#msg{min-height:24px;font-size:14px;line-height:1.6;text-align:center;color:#8f8f9d;word-break:break-all}"
+        +"</style></head><body>"
+        +"<h1>恢复游戏厅备份</h1>"
+        +"<p>只接受童年游戏厅导出的 JSON 备份。选择文件后会发送到电视，电视上会弹窗确认后才写入。</p>"
+        +"<label for='file'>选择备份文件<input id='file' type='file' accept='.json,application/json'></label>"
+        +"<div id='msg'></div>"
+        +"<script>(function(){var T='__TOKEN__',input=document.getElementById('file'),msg=document.getElementById('msg');"
+        +"function show(text,ok){msg.textContent=text;msg.style.color=ok?'#7bd88f':'#ff6b6b';}"
+        +"input.addEventListener('change',function(){"
+        +"var file=input.files&&input.files[0];if(!file)return;"
+        +"if(file.size>64*1024*1024){show('文件超过 64MB，无法发送',false);return;}"
+        +"show('正在读取备份…',true);"
+        +"var reader=new FileReader();"
+        +"reader.onerror=function(){show('读取文件失败，请重试',false);};"
+        +"reader.onload=function(){"
+        +"var text=String(reader.result||'');"
+        +"try{var data=JSON.parse(text);if(!data||data.schema!==1||data.app!=='childhood-arcade'||!Array.isArray(data.entries))throw new Error('bad');}"
+        +"catch(err){show('不是童年游戏厅导出的备份文件',false);return;}"
+        +"show('正在发送到电视…',true);"
+        +"fetch('/restore/'+T,{method:'POST',headers:{'Content-Type':'application/json'},body:text})"
+        +".then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();})"
+        +".then(function(){show('已发送到电视，请在电视上确认',true);input.value='';})"
+        +".catch(function(){show('发送失败，请确认手机与电视在同一网络',false);});"
+        +"};"
+        +"reader.readAsText(file);"
+        +"});"
+        +"})();</script></body></html>";
+    private static final String RESTORE_DONE="<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
+        +"<meta name='viewport' content='width=device-width,initial-scale=1'><title>已发送</title></head>"
+        +"<body style='margin:0;min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:30px 24px;background:#0d0d10;color:#f3efe3;font-family:sans-serif;text-align:center'>"
+        +"<p style='margin:0;color:#f7c948;font-size:21px'>已发送到电视</p>"
+        +"<p style='margin:12px 0 0;color:#9a9aa8;font-size:14px;line-height:1.7'>请在电视上确认恢复</p>"
+        +"</body></html>";
     public class Bridge {
-        @JavascriptInterface public boolean nativeNesAvailable(){return new File(getApplicationInfo().nativeLibraryDir,"libfceumm.so").isFile();}
+        @JavascriptInterface public boolean nativeNesAvailable(){String dir=getApplicationInfo().nativeLibraryDir;return new File(dir,"libfceumm.so").isFile()||new File(dir,"libnestopia.so").isFile();}
         @JavascriptInterface public String nativeSfcStart(String name,String hash){return nativeNes.loadSfc(name,hash);}
         @JavascriptInterface public String nativeMdStart(String name,String hash){return nativeNes.loadMd(name,hash);}
         @JavascriptInterface public String nativeGbaStart(String name,String hash){return nativeNes.loadGba(name,hash);}
@@ -157,7 +1009,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public String nativeNesStart(String data,String hash){return nativeNes.load(data,hash);}
         @JavascriptInterface public void nativeNesPause(){nativeNes.pause();}
         @JavascriptInterface public void nativeNesResume(){nativeNes.resume();}
-        @JavascriptInterface public void nativeNesClose(){nativeNes.close();}
+        @JavascriptInterface public void nativeNesClose(){try{nativeNes.close();}catch(RuntimeException e){android.util.Log.w("ArcadeCore","游戏线程未能及时停止",e);}}
         @JavascriptInterface public void nativeNesButton(int player,int button,boolean down){nativeNes.button(player,button,down);}
         @JavascriptInterface public void nativeNesRelease(){nativeNes.releaseAll();}
         @JavascriptInterface public void nativeNesVolume(float value){nativeNes.volume(value);}
@@ -166,7 +1018,107 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public String nativeNesRestore(String value){return nativeNes.restore(value);}
         @JavascriptInterface public String nativeNesImage(){return nativeNes.image();}
         @JavascriptInterface public String nativeNesStats(){return nativeNes.stats();}
+        @JavascriptInterface public String nativeNesRewind(){return nativeNes.rewind();}
+        @JavascriptInterface public String nativeNesRewindInfo(){return nativeNes.rewindInfo();}
+        @JavascriptInterface public String systemCheck(){
+            JSONObject out=new JSONObject();ArrayList<String> errors=new ArrayList<String>();
+            try{String[] abis=Build.SUPPORTED_ABIS;out.put("abi",abis!=null&&abis.length>0?abis[0]:"unknown");}catch(Throwable e){errors.add(message(e));}
+            try{out.put("sdk",Build.VERSION.SDK_INT);}catch(Throwable e){errors.add(message(e));}
+            JSONArray cores=new JSONArray();
+            try{String dir=getApplicationInfo().nativeLibraryDir;String[] names={"libfceumm.so","libnestopia.so","libsnes9x.so","libsnes9x2005.so","libsnes9x2005plus.so","libpicodrive.so","libgenplusgx.so","libmgba.so","libarcade.so","libjnidispatch.so"};for(String name:names)if(new File(dir,name).isFile())cores.put(name);}catch(Throwable e){errors.add(message(e));}
+            try{out.put("cores",cores);}catch(Throwable e){errors.add(message(e));}
+            try{out.put("freeBytes",new StatFs(getFilesDir().getAbsolutePath()).getAvailableBytes());}catch(Throwable e){errors.add(message(e));}
+            String webview="unknown";
+            try{if(Build.VERSION.SDK_INT>=26){PackageInfo info=WebView.getCurrentWebViewPackage();if(info!=null&&info.versionName!=null&&info.versionName.length()>0)webview=info.versionName;}}catch(Throwable e){errors.add(message(e));}
+            try{out.put("webview",webview);}catch(Throwable e){errors.add(message(e));}
+            int pads=0;
+            try{if(inputs!=null)for(int id:inputs.getInputDeviceIds()){InputDevice device=InputDevice.getDevice(id);if(device==null)continue;int sources=device.getSources();if((sources&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD||(sources&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK)pads++;}}catch(Throwable e){errors.add(message(e));}
+            try{out.put("gamepads",pads);}catch(Throwable e){errors.add(message(e));}
+            int count=0;long bytes=0;
+            try{File file=new File(storeDir,"library.json");if(file.isFile()){JSONArray games=new JSONObject(new String(readAll(new FileInputStream(file),32*1024*1024),"UTF-8")).optJSONArray("games");if(games!=null)count=games.length();}}catch(Throwable e){errors.add(message(e));}
+            try{bytes=treeSize(new File(getFilesDir(),"library/roms"));}catch(Throwable e){errors.add(message(e));}
+            try{out.put("libraryCount",count);out.put("libraryBytes",bytes);}catch(Throwable e){errors.add(message(e));}
+            if(!errors.isEmpty()){StringBuilder text=new StringBuilder();for(String item:errors){if(text.length()>0)text.append("; ");text.append(item);}try{out.put("error",text.toString());}catch(Throwable ignored){}}
+            return out.toString();
+        }
+        @JavascriptInterface public String checkResources(){
+            try{
+                JSONArray games=new JSONArray();
+                File file=new File(storeDir,"library.json");
+                if(file.isFile()){JSONArray list=new JSONObject(new String(readAll(new FileInputStream(file),32*1024*1024),"UTF-8")).optJSONArray("games");if(list!=null)games=list;}
+                int missing=0;JSONArray titles=new JSONArray();
+                for(int i=0;i<games.length();i++){
+                    JSONObject game=games.optJSONObject(i);if(game==null)continue;
+                    String path=game.optString("path","");boolean bad=false;
+                    if(path.length()==0||path.contains("..")||path.startsWith("/"))bad=true;
+                    else{
+                        File rom=new File(getFilesDir(),path);
+                        if(!rom.isFile())bad=true;
+                        else if(game.has("size")){long size=game.optLong("size",-1);if(size>=0&&rom.length()!=size)bad=true;}
+                    }
+                    if(bad){missing++;if(titles.length()<20)titles.put(game.optString("title","未知游戏"));}
+                }
+                return new JSONObject().put("checked",games.length()).put("missingCount",missing).put("missing",titles).toString();
+            }catch(Throwable e){
+                try{return new JSONObject().put("checked",0).put("missingCount",0).put("missing",new JSONArray()).put("error",message(e)).toString();}catch(Exception ignored){return "{\"checked\":0,\"missingCount\":0,\"missing\":[],\"error\":\"检查失败\"}";}
+            }
+        }
+        @JavascriptInterface public String startLanServer(){return lanStart();}
+        @JavascriptInterface public String lanInfo(){return lanInfoJson();}
+        @JavascriptInterface public void stopLanServer(){lanStop();}
+        @JavascriptInterface public String nativeGamepadList(){
+            JSONArray out=new JSONArray();
+            if(inputs==null)return out.toString();
+            int[] ids=inputs.getInputDeviceIds();
+            for(int i=0;i<ids.length;i++){
+                InputDevice device=InputDevice.getDevice(ids[i]);
+                if(device==null)continue;
+                int sources=device.getSources();
+                if((sources&InputDevice.SOURCE_GAMEPAD)!=InputDevice.SOURCE_GAMEPAD&&(sources&InputDevice.SOURCE_JOYSTICK)!=InputDevice.SOURCE_JOYSTICK)continue;
+                try{JSONObject item=gamepads.resolve(device).toJson();item.put("id",ids[i]);out.put(item);}catch(Exception ignored){}
+            }
+            return out.toString();
+        }
+        @JavascriptInterface public void nativeGamepadMonitor(boolean on){gamepadMonitor=on;}
+        @JavascriptInterface public void nativeGamepadCapture(String key,int action){startCapture(key,action);}
+        @JavascriptInterface public void nativeGamepadCaptureCancel(){clearCapture(false);}
+        @JavascriptInterface public boolean nativeGamepadLayout(String key,String layout){return gamepads.setLayout(key,layout);}
+        @JavascriptInterface public boolean nativeGamepadSwap(String key){return gamepads.swapAB(key);}
+        @JavascriptInterface public boolean nativeGamepadReset(String key){return gamepads.reset(key);}
+        @JavascriptInterface public boolean nativeGamepadApplyAll(String key){
+            HashSet<String> keys=new HashSet<String>();
+            if(inputs!=null)for(int id:inputs.getInputDeviceIds()){InputDevice device=InputDevice.getDevice(id);if(device!=null)keys.add(gamepads.key(device));}
+            return gamepads.applyToAll(key,keys);
+        }
         @JavascriptInterface public String readAsset(String path){if(path==null||!path.matches("roms/[a-z0-9-]+\\.nes"))return null;try{return Base64.encodeToString(readAll(getAssets().open(path),8*1024*1024),Base64.NO_WRAP);}catch(Exception e){return null;}}
+        @JavascriptInterface public void pickGameFolder(){runOnUiThread(new Runnable(){public void run(){
+            if(scanning){js("Arcade.libraryResult(0,0,'正在导入游戏，请稍候')");return;}
+            Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            try{startActivityForResult(intent,PICK_FOLDER);}
+            catch(ActivityNotFoundException e){js("Arcade.libraryResult(0,0,'电视没有可用的文件夹选择器，可通过电脑部署游戏文件')");}
+        }});}
+        @JavascriptInterface public String readLibraryRom(String hash){
+            if(hash==null||!hash.matches("[a-f0-9]{64}"))return null;
+            try{File file=new File(getFilesDir(),"library/roms/"+hash+".nes");if(!file.isFile())return null;return Base64.encodeToString(readAll(new FileInputStream(file),8*1024*1024),Base64.NO_WRAP);}catch(Exception e){return null;}
+        }
+        @JavascriptInterface public boolean writeLibraryCover(String hash,String base64,String ext){
+            if(hash==null||!hash.matches("[a-f0-9]{64}")||base64==null)return false;
+            if(!"png".equals(ext)&&!"jpg".equals(ext)&&!"jpeg".equals(ext)&&!"webp".equals(ext))return false;
+            if(base64.length()>1024*1024)return false;
+            try{
+                byte[] data=Base64.decode(base64,Base64.DEFAULT);
+                if(data.length==0||data.length>512*1024)return false;
+                File dir=new File(getFilesDir(),"library/covers");
+                if(!dir.isDirectory()&&!dir.mkdirs())return false;
+                File temp=new File(dir,hash+".tmp");
+                FileOutputStream out=new FileOutputStream(temp);
+                try{out.write(data);out.getFD().sync();}finally{out.close();}
+                File dest=new File(dir,hash+"."+ext);
+                if(dest.exists())dest.delete();
+                return temp.renameTo(dest);
+            }catch(Exception e){return false;}
+        }
         @JavascriptInterface public String readStore(String key){synchronized(storeLock){try{File f=keyFile(storeDir,key);if(!f.exists())return null;return new String(readAll(new AtomicFile(f).openRead(),32*1024*1024),"UTF-8");}catch(Exception e){return "{\"__readError\":true}";}}}
         @JavascriptInterface public boolean writeStore(String key,String value){synchronized(storeLock){try{if(value==null||value.length()>32*1024*1024)return false;new JSONObject("{\"value\":"+value+"}");atomicWrite(keyFile(storeDir,key),value);return true;}catch(Exception e){return false;}}}
         @JavascriptInterface public String listStoreKeys(){synchronized(storeLock){JSONArray list=new JSONArray();File[] files=storeDir.listFiles();if(files!=null)for(File f:files)if(f.getName().endsWith(".json"))list.put(f.getName().substring(0,f.getName().length()-5));return list.toString();}}

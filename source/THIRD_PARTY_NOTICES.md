@@ -3,6 +3,7 @@
 - JSNES 2.1.0, Ben Firshman and contributors, Apache-2.0. The vendored browser build is transpiled to ES5 without changing emulator logic. Full license: app/src/main/assets/vendor/JSNES-LICENSE.txt. Upstream: https://github.com/bfirsh/jsnes
 - core-js-bundle 3.x, Denis Pushkarev and contributors, MIT. Full license: app/src/main/assets/vendor/CORE-JS-LICENSE.txt. Exact version in package-lock.json. Upstream: https://github.com/zloirock/core-js
 - Noto Sans SC, Google and contributors, SIL Open Font License. The UI font is a text subset retrieved through Google Fonts; license: app/src/main/assets/fonts/OFL.txt. Upstream: https://github.com/google/fonts/tree/main/ofl/notosanssc
+- retroarch-joypad-autoconfig, The RetroArch team, MIT (bundled SDL3 gamecontrollerdb data under zlib). The controller mapping table in `app/src/main/assets/gamepad-profiles.json` is derived from this project's Android autoconfig files: vendor/product ids, controller names and button/axis bindings only. Full license: `licenses/RETROARCH-AUTOCONFIG.txt`. Upstream: https://github.com/libretro/retroarch-joypad-autoconfig
 - Classic NES game data and resulting frame captures are local test inputs. Their public redistribution rights have not been confirmed. They are excluded from the separately exported open-source ZIP and are not covered by the application's MIT license.
 
 ## Optional arcade runtime (0.3.0)
@@ -17,3 +18,12 @@
 - FCEUmm, GPL-2.0. The core reports `(SVN) e0f3086`, matching full commit e0f3086a8104f8fbbe49a2615b10401504a9533f. Full source archive is third_party/fceumm-source-e0f3086.tar.gz; license is licenses/FCEUMM.txt. Its binary and source archive checksums are recorded in NATIVE_CORE_ORIGIN.json. The public source ZIP omits compiled libraries and classic games. Source may be built using the included Android.mk and an Android NDK; prepare-native-nes.py provides this route and changes the save identity for separately built cores. Matching source revision does not assert bit-identical compilation.
 - JNA 5.13.0, Apache-2.0 OR LGPL-2.1. License: licenses/JNA.txt. Prepared from the hash-pinned official Maven AAR; compiled JAR/SO files are omitted from the source ZIP.
 - The combined Android build uses the GPL-2.0 FCEUmm component. Distribution of that combined build must include the applicable license and corresponding-source arrangements. The independent frontend and host code remain available under their MIT license.
+
+## Native multi-core fallback (1.0.0)
+
+- Genesis Plus GX (Mega Drive), non-commercial license. Binaries retrieved from the libretro buildbot (`nightly/android/latest/armeabi-v7a` and `arm64-v8a`). Upstream: https://github.com/libretro/Genesis-Plus-GX . License text must be added before public redistribution.
+- Snes9x (Super Nintendo), Snes9x non-commercial terms. Binaries retrieved from the libretro buildbot for both ABIs. Upstream: https://github.com/libretro/snes9x .
+- Nestopia UE (NES fallback), GPL-2.0. Binaries retrieved from the libretro buildbot for both ABIs. Upstream: https://github.com/libretro/nestopia .
+- These cores ship as separate dynamic libraries, same as FCEUmm. The app's own frontend and host code remain MIT. Public distribution requires adding the full license texts and corresponding-source instructions for every bundled core.
+- QR code rendering uses qrcode-generator 1.4.4 (MIT), bundled at `app/src/main/assets/vendor/qrcode.js`.
+- The optional browser preview uses jsnes 1.2.1 (MIT), bundled at `app/src/main/assets/vendor/jsnes.min.js`.

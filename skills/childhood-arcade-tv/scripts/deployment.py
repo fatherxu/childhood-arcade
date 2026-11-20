@@ -15,7 +15,7 @@ from urllib.request import ProxyHandler, build_opener
 import uuid
 import zipfile
 from webview import page_health
-from resources import read_pack, install_pack
+from resources import read_pack, install_pack, InsufficientSpace
 
 PACKAGE = 'org.childhood.arcade'
 MIN_SDK = 23
@@ -70,13 +70,21 @@ def selected_serial(value):
     return value
 
 
+def file_sha256(path):
+    hasher = hashlib.sha256()
+    with Path(path).open('rb') as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 def artifact(path, expected):
     path = Path(path).expanduser().resolve()
     if not path.is_file() or path.suffix.lower() != '.apk':
         raise DeploymentError('needs_apk', '本机没有找到已配置的APK，请先构建或提供安装包。', path=str(path))
     if not expected or not re.fullmatch(r'[a-f0-9]{64}', expected):
         raise DeploymentError('needs_apk_hash', '需要配置已核对安装包的SHA-256。')
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    digest = file_sha256(path)
     if digest != expected:
         raise DeploymentError('apk_changed', '安装包内容与已配置的SHA-256不一致，已停止安装。', actual=digest, expected=expected)
     try:
@@ -110,6 +118,7 @@ def free_bytes(output, kilobytes=True):
 class Client:
     def __init__(self, adb, serial):
         self.adb, self.serial = adb, serial
+        self.forward_port, self.page_pid = None, None
 
     def run(self, args, timeout=12, allow_failure=False, binary=False):
         try:
@@ -204,20 +213,39 @@ class Client:
             pid = [row.split()[1] for row in rows if len(row.split()) > 1 and row.split()[-1] == PACKAGE]
         if not pid or not pid[0].isdigit():
             raise ValueError('未找到游戏厅进程')
-        port = self.run(['-s', self.serial, 'forward', 'tcp:0', 'localabstract:webview_devtools_remote_' + pid[0]])[0]
-        if not port.isdigit():
-            raise ValueError('无法创建本机页面检查通道')
+        if not self.forward_port or self.page_pid != pid[0]:
+            self.close_page()
+            self.forward_port = self.run(['-s', self.serial, 'forward', 'tcp:0', 'localabstract:webview_devtools_remote_' + pid[0]])[0]
+            if not self.forward_port.isdigit():
+                self.forward_port = None
+                raise ValueError('无法创建本机页面检查通道')
+            self.page_pid = pid[0]
         try:
             opener = build_opener(ProxyHandler({}))
-            with opener.open('http://127.0.0.1:' + port + '/json/list', timeout=3) as response:
+            with opener.open('http://127.0.0.1:' + self.forward_port + '/json/list', timeout=3) as response:
                 targets = json.load(response)
             target = next(item for item in targets if item.get('url') in ('file:///android_asset/index.html', 'https://appassets.androidplatform.net/assets/index.html'))
-            return page_health(target['webSocketDebuggerUrl'], int(port))
-        finally:
-            self.run(['-s', self.serial, 'forward', '--remove', 'tcp:' + port], allow_failure=True)
+            return page_health(target['webSocketDebuggerUrl'], int(self.forward_port))
+        except Exception:
+            self.close_page()
+            raise
+
+    def close_page(self):
+        if self.forward_port:
+            self.run(['-s', self.serial, 'forward', '--remove', 'tcp:' + self.forward_port], allow_failure=True)
+        self.forward_port, self.page_pid = None, None
 
 
 def deploy(home, config, client, apk, report, announce):
+    try:
+        return _deploy(home, config, client, apk, report, announce)
+    finally:
+        closer = getattr(client, 'close_page', None)
+        if closer:
+            closer()
+
+
+def _deploy(home, config, client, apk, report, announce):
     entries = []
     if config.get('game_pack_manifest'):
         try:
@@ -269,12 +297,14 @@ def deploy(home, config, client, apk, report, announce):
         if 'USER_RESTRICTED' in output:
             raise DeploymentError('installation_restricted', '电视禁止此次安装，请查看电视安装提示或“允许安装未知来源应用”开关。')
         raise DeploymentError('installation_failed', 'APK未安装成功，已停止，不自动卸载重试。', output=output[-2000:])
-    report['installed'] = True
     if not client.shell('pm', 'path', PACKAGE).startswith('package:'):
         raise DeploymentError('package_not_found', '安装命令返回成功，但未找到游戏厅包，尚未完成验证。')
+    report['installed'] = True
     if entries:
         try:
-            install_pack(client, PACKAGE, entries, announce, report)
+            install_pack(client, PACKAGE, entries, announce, report, info.get('free_bytes'))
+        except InsufficientSpace as error:
+            raise DeploymentError('insufficient_space', '电视可用空间不足，游戏资源尚未全部安装；请先释放空间后重试。', error=str(error))
         except (ValueError, OSError) as error:
             raise DeploymentError('game_pack_incomplete', 'APK已安装，游戏资源尚未全部就绪；再次更新会跳过已校验文件。', error=str(error))
     announce('启动并验证游戏厅页面')

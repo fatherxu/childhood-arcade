@@ -28,6 +28,6 @@ description: 把童年游戏厅安装或更新到Android电视，并检查连接
 
 ## 检查和备份
 
-`python3 scripts/tv.py doctor` 检查已配置电视；`python3 scripts/tv.py backup --output NEW_FILE.json` 备份设置、收藏和已保存进度，不含ROM。provider 模式通过正式接口导出 ZIP，包含已保存状态和 NES SRAM，不包含 ROM 或未保存进度。可使用 `restore --input PATH.zip` 恢复，会停止游戏厅并覆盖同名已保存状态；先核对备份和目标。遇到旧调试版签名冲突停止，不卸载。
+`python3 scripts/tv.py doctor` 检查已配置电视；`python3 scripts/tv.py backup --output NEW_FILE.json` 备份设置、收藏和已保存进度，不含ROM；provider 模式会写出同名 `.zip`（扩展名自动改写）。provider 模式通过正式接口导出 ZIP，包含已保存状态和 NES SRAM，不包含 ROM 或未保存进度。可使用 `restore --input PATH.zip` 恢复，会停止游戏厅并覆盖同名已保存状态；先核对备份和目标。遇到旧调试版签名冲突停止，不卸载。
 
 测试或故障处理细节、首次配置、安装触发示例与验证边界见 [references/operations.md](references/operations.md)。

@@ -6,6 +6,10 @@ import re
 import shlex
 
 
+class InsufficientSpace(ValueError):
+    """Pending resources do not fit in the free space reported by the device."""
+
+
 def read_pack(path):
     manifest = Path(path).expanduser().resolve()
     value = json.loads(manifest.read_text(encoding='utf-8'))
@@ -52,7 +56,7 @@ def resource_tool(client, package, apk_path, args):
     return result
 
 
-def install_pack(client, package, entries, announce, report):
+def install_pack(client, package, entries, announce, report, free_bytes=None):
     raw = client.shell('pm', 'path', package)
     paths = [x[len('package:'):] for x in raw.splitlines() if x.startswith('package:')]
     if len(paths) != 1 or not paths[0].startswith('/data/app/') or not paths[0].endswith('.apk'):
@@ -63,10 +67,11 @@ def install_pack(client, package, entries, announce, report):
     for entry in pending:
         if checks[entry['name']].get('bytes', 0):
             raise ValueError('A different installed resource was preserved: ' + entry['name'])
-    required = sum(entry['bytes'] for entry in pending) + max((entry['bytes'] for entry in pending), default=0) + 16 * 1024 * 1024
-    available = client.probe().get('free_bytes')
-    if available is None or available < required:
-        raise ValueError('Insufficient or unknown free space for remaining game resources')
+    if pending:
+        required = sum(entry['bytes'] for entry in pending) + max(entry['bytes'] for entry in pending) + 16 * 1024 * 1024
+        available = free_bytes if free_bytes is not None else client.probe().get('free_bytes')
+        if available is None or available < required:
+            raise InsufficientSpace('Insufficient or unknown free space for remaining game resources')
     report['resources'] = []
     for index, entry in enumerate(entries):
         name, digest = entry['name'], entry['sha256']

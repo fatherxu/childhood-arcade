@@ -28,6 +28,15 @@ public final class NativeNes {
     public static final String GBA_ENGINE="mgba-native-a976a807a7bd";
     public static final String ARCADE_ENGINE="fba2012-native-749e6f6079e0";
     public static final String ENGINE="fceumm-native-81ebd3e72d96";
+    public static final String NES_FALLBACK_ENGINE="nestopia-native-7ec329b1ccb2";
+    public static final String SFC_ACCURATE_ENGINE="snes9x-native-9de9b3537a32";
+    public static final String MD_ACCURATE_ENGINE="genplusgx-native-2db71c37d12a";
+    private static final String[][] NES_CORES={{"libfceumm.so",ENGINE},{"libnestopia.so",NES_FALLBACK_ENGINE}};
+    private static final String[][] SFC_CORES={{"libsnes9x.so",SFC_ACCURATE_ENGINE},{"libsnes9x2005plus.so",SFC_ENGINE},{"libsnes9x2005.so",SFC_FAST_ENGINE}};
+    private static final String[][] SFC_KIRBY_CORES={{"libsnes9x2005.so",SFC_FAST_ENGINE},{"libsnes9x.so",SFC_ACCURATE_ENGINE},{"libsnes9x2005plus.so",SFC_ENGINE}};
+    private static final String[][] MD_CORES={{"libgenplusgx.so",MD_ACCURATE_ENGINE},{"libpicodrive.so",MD_ENGINE}};
+    private static final String[][] GBA_CORES={{"libmgba.so",GBA_ENGINE}};
+    private static final String[][] ARCADE_CORES={{"libarcade.so",ARCADE_ENGINE}};
     public interface CoreLog extends Callback {void callback(int level,String format);}
     private final CoreLog coreLog=new CoreLog(){public void callback(int level,String format){if(level>=2)android.util.Log.w("ArcadeCore",format);}};
     public interface Environment extends Callback {byte callback(int command,Pointer data);}
@@ -61,11 +70,14 @@ public final class NativeNes {
     private final AtomicLong inputStamp=new AtomicLong();
     private volatile double inputLatencyMs=0;
     private short[] sound=new short[4096];
+    private static final int[] MAP_NES={8,0,2,3,4,5,6,7},MAP_HANDHELD={8,0,2,3,4,5,6,7,1,9,10,11},MAP_ARCADE={0,8,2,3,4,5,6,7,1,9,10,11},MAP_MD={1,0,2,3,4,5,6,7,8,9,10,11};
     private File batteryFile,gameFile;
     private boolean initialized=false;
     private String lastBatteryDigest=null;
     private boolean batteryReady=false;
     private volatile int reportedSaveBytes=0;
+    private static final int REWIND_LIMIT=4,REWIND_MAX_STATE=4*1024*1024;
+    private final java.util.ArrayDeque<byte[]> rewindBuffer=new java.util.ArrayDeque<byte[]>(REWIND_LIMIT);
 
     private final Environment environment=new Environment(){public byte callback(int cmd,Pointer p){
         switch(cmd&0xffff){
@@ -127,16 +139,26 @@ public final class NativeNes {
         run=fn("retro_run");serialize=fn("retro_serialize");unserialize=fn("retro_unserialize");stateSize=fn("retro_serialize_size");
     }
     public String load(String encoded,String expected){
+        Throwable last=null;
         try{
-            close();arcade=false;handheld=false;megadrive=false;superNintendo=false;engineId=ENGINE;library="libfceumm.so";directory.setString(0,activity.getFilesDir().getAbsolutePath()+"/nes");byte[] rom=Base64.decode(encoded,Base64.DEFAULT);
+            close();arcade=false;handheld=false;megadrive=false;superNintendo=false;directory.setString(0,activity.getFilesDir().getAbsolutePath()+"/nes");byte[] rom=Base64.decode(encoded,Base64.DEFAULT);
             if(rom.length>8*1024*1024||expected==null||!expected.matches("[a-f0-9]{64}")||!digest(rom).equals(expected))throw new IOException("游戏文件校验失败");
-            synchronized(lock){
-                initLibrary();fn("retro_init").invokeVoid(new Object[]{});initialized=true;
-                romMemory=new Memory(rom.length);romMemory.write(0,rom,0,rom.length);gameFile=new File(activity.getCacheDir(),"running-game.nes");FileOutputStream romFile=new FileOutputStream(gameFile);romFile.write(rom);romFile.close();pathMemory=new Memory(1024);pathMemory.setString(0,gameFile.getAbsolutePath());int size=Native.POINTER_SIZE;gameInfo=new Memory(size*4);gameInfo.clear();gameInfo.setPointer(0,pathMemory);gameInfo.setPointer(size,romMemory);gameInfo.setNativeLong(size*2,new NativeLong(rom.length));
-                if(fn("retro_load_game").invokeInt(new Object[]{gameInfo})==0)throw new IOException("当前游戏暂不受支持");
-                finishLoad(expected);
+            int size=Native.POINTER_SIZE;
+            for(String[] candidate:NES_CORES){
+                library=candidate[0];engineId=candidate[1];
+                try{
+                    romMemory=new Memory(rom.length);romMemory.write(0,rom,0,rom.length);gameFile=new File(activity.getCacheDir(),"running-game.nes");FileOutputStream romFile=new FileOutputStream(gameFile);romFile.write(rom);romFile.close();pathMemory=new Memory(1024);pathMemory.setString(0,gameFile.getAbsolutePath());
+                    synchronized(lock){
+                        initLibrary();fn("retro_init").invokeVoid(new Object[]{});initialized=true;
+                        gameInfo=new Memory(size*4);gameInfo.clear();gameInfo.setPointer(0,pathMemory);gameInfo.setPointer(size,romMemory);gameInfo.setNativeLong(size*2,new NativeLong(rom.length));
+                        if(fn("retro_load_game").invokeInt(new Object[]{gameInfo})==0)throw new IOException("当前游戏暂不受支持");
+                        finishLoad(expected);
+                    }
+                    return startThread();
+                }catch(Throwable e){last=e;try{close();}catch(Throwable ignored){}}
             }
-            return startThread();
+            if(last!=null)throw last;
+            throw new IOException("没有可用的FC核心");
         }catch(Throwable e){error=e.toString();try{close();}catch(Throwable ignored){}return error(e);}
     }
     public String loadArcade(String name,String expected){return loadExternal(name,expected,false,false,false);}
@@ -145,25 +167,34 @@ public final class NativeNes {
     public String loadSfc(String name,String expected){return loadExternal(name,expected,false,false,true);}
     private String loadExternal(String name,String expected,boolean gba,boolean md,boolean sfc){
         try{
-            close();handheld=gba;megadrive=md;superNintendo=sfc;arcade=!gba&&!md&&!sfc;engineId=sfc?("sfc-kirby-superstar.sfc".equals(name)?SFC_FAST_ENGINE:SFC_ENGINE):md?MD_ENGINE:gba?GBA_ENGINE:ARCADE_ENGINE;library=sfc?("sfc-kirby-superstar.sfc".equals(name)?"libsnes9x2005.so":"libsnes9x2005plus.so"):md?"libpicodrive.so":gba?"libmgba.so":"libarcade.so";
+            close();handheld=gba;megadrive=md;superNintendo=sfc;arcade=!gba&&!md&&!sfc;
             if(name==null||!name.matches(sfc?"[a-z0-9-]{1,60}\\.sfc":md?"[a-z0-9-]{1,60}\\.md":gba?"[a-z0-9-]{1,60}\\.gba":"[a-z0-9-]{1,60}\\.zip")||expected==null||!expected.matches("[a-f0-9]{64}"))throw new IOException((sfc?"SFC":md?"MD":gba?"GBA":"街机")+"目录无效");
             File folder=new File(activity.getFilesDir(),sfc?"sfc/roms":md?"md/roms":gba?"gba/roms":"arcade/roms");gameFile=new File(folder,name);
             if(!gameFile.isFile())throw new IOException((sfc?"SFC":md?"MD":gba?"GBA":"街机")+"资源尚未安装完整，请重新更新游戏厅");
             if(!fileDigest(gameFile).equals(expected))throw new IOException((sfc?"SFC":md?"MD":gba?"GBA":"街机")+"资源校验失败，请重新更新游戏厅");
             directory.setString(0,folder.getAbsolutePath());
-            synchronized(lock){
-                initLibrary();fn("retro_init").invokeVoid(new Object[]{});initialized=true;
-                pathMemory=new Memory(1024);pathMemory.setString(0,gameFile.getAbsolutePath());int size=Native.POINTER_SIZE;gameInfo=new Memory(size*4);gameInfo.clear();gameInfo.setPointer(0,pathMemory);
-                if(sfc){if(gameFile.length()<1||gameFile.length()>16*1024*1024)throw new IOException("SFC游戏大小无效");byte[] data=new byte[(int)gameFile.length()];try(java.io.DataInputStream in=new java.io.DataInputStream(new FileInputStream(gameFile))){in.readFully(data);}romMemory=new Memory(data.length);romMemory.write(0,data,0,data.length);gameInfo.setPointer(size,romMemory);gameInfo.setNativeLong(size*2,new NativeLong(data.length));}
-                if(fn("retro_load_game").invokeInt(new Object[]{gameInfo})==0)throw new IOException(sfc?"SFC游戏文件或内核不匹配":md?"MD游戏文件或内核不匹配":gba?"GBA游戏文件或内核不匹配":"街机文件或BIOS与内核不匹配");
-                finishLoad(expected);
-                int bytes=((NativeLong)stateSize.invoke(NativeLong.class,new Object[]{})).intValue();if(bytes<=0)throw new IOException("当前游戏未能完成初始化");
+            String[][] candidates=sfc?(name.equals("sfc-kirby-superstar.sfc")?SFC_KIRBY_CORES:SFC_CORES):md?MD_CORES:gba?GBA_CORES:ARCADE_CORES;
+            Throwable last=null;
+            for(String[] candidate:candidates){
+                library=candidate[0];engineId=candidate[1];
+                try{
+                    synchronized(lock){
+                        initLibrary();fn("retro_init").invokeVoid(new Object[]{});initialized=true;
+                        pathMemory=new Memory(1024);pathMemory.setString(0,gameFile.getAbsolutePath());int size=Native.POINTER_SIZE;gameInfo=new Memory(size*4);gameInfo.clear();gameInfo.setPointer(0,pathMemory);
+                        if(sfc){if(gameFile.length()<1||gameFile.length()>16*1024*1024)throw new IOException("SFC游戏大小无效");byte[] data=new byte[(int)gameFile.length()];try(java.io.DataInputStream in=new java.io.DataInputStream(new FileInputStream(gameFile))){in.readFully(data);}romMemory=new Memory(data.length);romMemory.write(0,data,0,data.length);gameInfo.setPointer(size,romMemory);gameInfo.setNativeLong(size*2,new NativeLong(data.length));}
+                        if(fn("retro_load_game").invokeInt(new Object[]{gameInfo})==0)throw new IOException(sfc?"SFC游戏文件或内核不匹配":md?"MD游戏文件或内核不匹配":gba?"GBA游戏文件或内核不匹配":"街机文件或BIOS与内核不匹配");
+                        finishLoad(expected);
+                        int bytes=((NativeLong)stateSize.invoke(NativeLong.class,new Object[]{})).intValue();if(bytes<=0)throw new IOException("当前游戏未能完成初始化");
+                    }
+                    return startThread();
+                }catch(Throwable e){last=e;try{close();}catch(Throwable ignored){}}
             }
-            return startThread();
+            if(last!=null)throw last;
+            throw new IOException("没有可用的模拟器核心");
         }catch(Throwable e){error=e.toString();try{close();}catch(Throwable ignored){}return error(e);}
     }
     private void finishLoad(String expected)throws Exception{
-        loaded=true;hash=expected;lastBatteryDigest=null;batteryReady=false;reportedSaveBytes=0;frames=audioFrames=drawFrames=lateFrames=0;error=null;
+        loaded=true;hash=expected;lastBatteryDigest=null;batteryReady=false;reportedSaveBytes=0;rewindBuffer.clear();frames=audioFrames=drawFrames=lateFrames=0;error=null;
         Memory av=new Memory(64);av.clear();fn("retro_get_system_av_info").invokeVoid(new Object[]{av});fps=av.getDouble(24);double rate=av.getDouble(32);
         if((Double.isNaN(fps)||Double.isInfinite(fps))||fps<40||fps>70)throw new IOException("游戏时钟异常");
         if((Double.isNaN(rate)||Double.isInfinite(rate))||rate<8000||rate>96000)throw new IOException("声音时钟异常");sampleRate=(int)Math.round(rate);
@@ -182,7 +213,7 @@ public final class NativeNes {
         try{while(!stop){
             if(!running){next=0;Thread.sleep(3);continue;}
             long begin=System.nanoTime();
-            synchronized(lock){if(!running||!loaded)continue;run.invokeVoid(new Object[]{});frames++;if((handheld||megadrive||superNintendo)&&frames%300==0)saveBattery();}
+            synchronized(lock){if(!running||!loaded)continue;run.invokeVoid(new Object[]{});frames++;if((handheld||megadrive||superNintendo)&&frames%300==0)saveBattery();if(frames%180==0)captureRewind();}
             long now=System.nanoTime();cpuMs=cpuMs*.95+(now-begin)/1000000.0*.05;
             if(next==0)next=begin;next+=period;
             if(now>next+period){lateFrames++;next=now;}
@@ -195,7 +226,7 @@ public final class NativeNes {
     public void close(){
         running=false;stop=true;hide();Thread old=thread;thread=null;
         if(old!=null&&old!=Thread.currentThread()){try{old.join(1500);}catch(InterruptedException e){Thread.currentThread().interrupt();}if(old.isAlive())throw new IllegalStateException("游戏尚未停止");}
-        synchronized(lock){releaseAll();if(loaded){saveBattery();fn("retro_unload_game").invokeVoid(new Object[]{});}if(initialized){fn("retro_deinit").invokeVoid(new Object[]{});initialized=false;}loaded=false;if(gameFile!=null){if(!arcade&&!handheld&&!megadrive&&!superNintendo)gameFile.delete();gameFile=null;}hash=null;if(track!=null){track.pause();track.flush();track.release();track=null;}romMemory=gameInfo=pathMemory=null;if((arcade||handheld||megadrive||superNintendo)&&core!=null){core.close();core=null;loadedLibrary=null;coreOptions.clear();}}
+        synchronized(lock){releaseAll();rewindBuffer.clear();if(loaded){saveBattery();fn("retro_unload_game").invokeVoid(new Object[]{});}if(initialized){fn("retro_deinit").invokeVoid(new Object[]{});initialized=false;}loaded=false;if(gameFile!=null){if(!arcade&&!handheld&&!megadrive&&!superNintendo)gameFile.delete();gameFile=null;}hash=null;if(track!=null){track.pause();track.flush();track.release();track=null;}romMemory=gameInfo=pathMemory=null;if((arcade||handheld||megadrive||superNintendo)&&core!=null){core.close();core=null;loadedLibrary=null;coreOptions.clear();}}
     }
     public void releaseAll(){buttons.set(0,0);buttons.set(1,0);}
     public boolean isRunning(){return running;}
@@ -203,20 +234,55 @@ public final class NativeNes {
     public boolean isGba(){return handheld;}
     public boolean isMd(){return megadrive;}
     public boolean isSfc(){return superNintendo;}
-    public void button(int player,int button,boolean down){if(down)inputStamp.set(System.nanoTime());if(handheld&&player!=1)return;int[] mapping=megadrive?new int[]{1,0,2,3,4,5,6,7,8,9,10,11}:(arcade||superNintendo)?new int[]{0,8,2,3,4,5,6,7,1,9,10,11}:handheld?new int[]{8,0,2,3,4,5,6,7,1,9,10,11}:new int[]{8,0,2,3,4,5,6,7};if(player<1||player>2||button<0||button>=mapping.length)return;int index=player-1,mask=1<<mapping[button],old,now;do{old=buttons.get(index);now=down?(old|mask):(old&~mask);}while(!buttons.compareAndSet(index,old,now));}
+    public void button(int player,int button,boolean down){if(down)inputStamp.set(System.nanoTime());if(handheld&&player!=1)return;int[] mapping=megadrive?MAP_MD:(arcade||superNintendo)?MAP_ARCADE:handheld?MAP_HANDHELD:MAP_NES;if(player<1||player>2||button<0||button>=mapping.length)return;int index=player-1,mask=1<<mapping[button],old,now;do{old=buttons.get(index);now=down?(old|mask):(old&~mask);}while(!buttons.compareAndSet(index,old,now));}
     public void volume(float value){volume=Math.max(0,Math.min(1,value));synchronized(lock){if(track!=null)track.setVolume(volume);}}
     public void bounds(final float left,final float top,final float width,final float height,final float viewportWidth,final float viewportHeight){if(width<1||height<1)return;activity.runOnUiThread(new Runnable(){public void run(){FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(Math.round(width*parent.getWidth()/viewportWidth),Math.round(height*parent.getHeight()/viewportHeight));p.leftMargin=Math.round(left*parent.getWidth()/viewportWidth);p.topMargin=Math.round(top*parent.getHeight()/viewportHeight);view.setLayoutParams(p);}});}
     public String snapshot(){
         synchronized(lock){try{if(!loaded)throw new IOException("没有正在运行的游戏");int n=((NativeLong)stateSize.invoke(NativeLong.class,new Object[]{})).intValue();if(n<1||n>8*1024*1024)throw new IOException("存档大小异常");Memory state=new Memory(n);if(serialize.invokeInt(new Object[]{state,new NativeLong(n)})==0)throw new IOException("保存进度失败");byte[] bytes=state.getByteArray(0,n);JSONObject obj=new JSONObject();obj.put("schema",1);obj.put("engine",engineId);obj.put("hash",hash);obj.put("frames",frames);JSONObject data=new JSONObject();data.put("format","libretro-base64");data.put("data",Base64.encodeToString(bytes,Base64.NO_WRAP));data.put("bytes",n);data.put("sha256",digest(bytes));obj.put("state",data);return obj.toString();}catch(Throwable e){return error(e);}}
     }
     public String restore(String json){
-        synchronized(lock){try{if(!loaded)throw new IOException("没有正在运行的游戏");JSONObject save=new JSONObject(json),s=save.getJSONObject("state");if(save.getInt("schema")!=1||!engineId.equals(save.getString("engine"))||!hash.equals(save.getString("hash"))||!"libretro-base64".equals(s.getString("format")))throw new IOException("存档与当前游戏版本不匹配");byte[] bytes=Base64.decode(s.getString("data"),Base64.DEFAULT);int n=((NativeLong)stateSize.invoke(NativeLong.class,new Object[]{})).intValue();if(bytes.length!=n||bytes.length!=s.getInt("bytes")||!digest(bytes).equals(s.getString("sha256")))throw new IOException("存档校验失败，当前进度已保留");Memory previous=new Memory(n);if(serialize.invokeInt(new Object[]{previous,new NativeLong(n)})==0)throw new IOException("无法保护当前进度");Memory data=new Memory(n);data.write(0,bytes,0,n);if(unserialize.invokeInt(new Object[]{data,new NativeLong(n)})==0){unserialize.invokeInt(new Object[]{previous,new NativeLong(n)});throw new IOException("存档无法读取，当前进度已保留");}frames=save.getLong("frames");releaseAll();if(track!=null){track.pause();track.flush();}return "{\"ok\":true}";}catch(Throwable e){return error(e);}}
+        synchronized(lock){try{rewindBuffer.clear();if(!loaded)throw new IOException("没有正在运行的游戏");JSONObject save=new JSONObject(json),s=save.getJSONObject("state");if(save.getInt("schema")!=1||!engineId.equals(save.getString("engine"))||!hash.equals(save.getString("hash"))||!"libretro-base64".equals(s.getString("format")))throw new IOException("存档与当前游戏版本不匹配");byte[] bytes=Base64.decode(s.getString("data"),Base64.DEFAULT);int n=((NativeLong)stateSize.invoke(NativeLong.class,new Object[]{})).intValue();if(bytes.length!=n||bytes.length!=s.getInt("bytes")||!digest(bytes).equals(s.getString("sha256")))throw new IOException("存档校验失败，当前进度已保留");Memory previous=new Memory(n);if(serialize.invokeInt(new Object[]{previous,new NativeLong(n)})==0)throw new IOException("无法保护当前进度");Memory data=new Memory(n);data.write(0,bytes,0,n);if(unserialize.invokeInt(new Object[]{data,new NativeLong(n)})==0){unserialize.invokeInt(new Object[]{previous,new NativeLong(n)});throw new IOException("存档无法读取，当前进度已保留");}frames=save.getLong("frames");releaseAll();if(track!=null){track.pause();track.flush();}return "{\"ok\":true}";}catch(Throwable e){return error(e);}}
     }
+    private void captureRewind(){
+        try{
+            int n=((NativeLong)stateSize.invoke(NativeLong.class,new Object[]{})).intValue();
+            if(n<1||n>REWIND_MAX_STATE)return;
+            Memory state=new Memory(n);
+            if(serialize.invokeInt(new Object[]{state,new NativeLong(n)})==0)return;
+            if(rewindBuffer.size()>=REWIND_LIMIT)rewindBuffer.removeFirst();
+            rewindBuffer.addLast(state.getByteArray(0,n));
+        }catch(Throwable ignored){}
+    }
+    public String rewind(){
+        synchronized(lock){
+            try{
+                if(!loaded||rewindBuffer.isEmpty())throw new IOException("还没有可倒带的进度");
+                byte[] target=rewindBuffer.peekLast();
+                int n=((NativeLong)stateSize.invoke(NativeLong.class,new Object[]{})).intValue();
+                if(target==null||n<1||n>8*1024*1024)throw new IOException("倒带失败，当前进度已保留");
+                Memory previous=new Memory(n);
+                if(serialize.invokeInt(new Object[]{previous,new NativeLong(n)})==0)throw new IOException("倒带失败，当前进度已保留");
+                Memory state=new Memory(target.length);
+                state.write(0,target,0,target.length);
+                boolean ok;
+                try{ok=unserialize.invokeInt(new Object[]{state,new NativeLong(target.length)})!=0;}
+                catch(Throwable failure){restoreState(previous,n);throw failure;}
+                if(!ok){restoreState(previous,n);throw new IOException("倒带失败，当前进度已保留");}
+                rewindBuffer.clear();releaseAll();
+                if(track!=null){track.pause();track.flush();track.play();}
+                return "{\"ok\":true}";
+            }catch(Throwable e){return error(e);}
+        }
+    }
+    private void restoreState(Memory previous,int size){
+        try{unserialize.invokeInt(new Object[]{previous,new NativeLong(size)});}catch(Throwable ignored){}
+    }
+    public String rewindInfo(){synchronized(lock){return "{\"available\":"+rewindBuffer.size()+"}";}}
     public String image(){synchronized(imageLock){if(picture==null)return null;Bitmap bitmap=Bitmap.createBitmap(pictureWidth,pictureHeight,pictureBytes==4?Bitmap.Config.ARGB_8888:Bitmap.Config.RGB_565);bitmap.setHasAlpha(false);picture.position(0);bitmap.copyPixelsFromBuffer(picture);picture.position(0);ByteArrayOutputStream out=new ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.PNG,100,out);bitmap.recycle();return "data:image/png;base64,"+Base64.encodeToString(out.toByteArray(),Base64.NO_WRAP);}}
     public String stats(){try{JSONObject out=new JSONObject();out.put("engine",engineId);out.put("reportedSaveBytes",reportedSaveBytes);out.put("running",running);out.put("loaded",loaded);out.put("frames",frames);out.put("fps",running&&resumeTime>0?(frames-resumeFrames)*1e9/(System.nanoTime()-resumeTime):0);out.put("targetFps",fps);out.put("frameAndAudioMs",cpuMs);out.put("audioFrames",audioFrames);out.put("drawFrames",drawFrames);out.put("presentedFrames",presentedFrames);out.put("presentationFps",running&&resumeTime>0?(presentedFrames-resumePresented)*1e9/(System.nanoTime()-resumeTime):0);out.put("inputLatencyMs",inputLatencyMs);out.put("inputSamples",inputSamples);out.put("pixelFormat",pixelFormat);out.put("audioPlayedFrames",track==null?0:(track.getPlaybackHeadPosition()&0xffffffffL));out.put("lateFrames",lateFrames);out.put("sampleRate",sampleRate);out.put("buttons1",buttons.get(0));out.put("buttons2",buttons.get(1));out.put("error",error);return out.toString();}catch(Exception e){return "{}";}}
     private File handheldBatteryFile(){return new File(new File(activity.getFilesDir(),"store"),"battery:"+hash+".json");}
     private void saveHandheldBattery(){try{int n=((NativeLong)fn("retro_get_memory_size").invoke(NativeLong.class,new Object[]{0})).intValue();reportedSaveBytes=n;if(handheld)n=GbaSaveMemory.capacity(n);if(n<1||n>1048576||hash==null)return;Pointer data=(Pointer)fn("retro_get_memory_data").invoke(Pointer.class,new Object[]{0});if(data==null)return;byte[] bytes=data.getByteArray(0,n);String sum=digest(bytes);if(sum.equals(lastBatteryDigest))return;JSONObject value=new JSONObject().put("schema",1).put("format",superNintendo?"sfc-sram-base64":megadrive?"md-sram-base64":"gba-sram-base64").put("hash",hash).put("engine",engineId).put("bytes",n).put("sha256",sum).put("data",Base64.encodeToString(bytes,Base64.NO_WRAP));File target=handheldBatteryFile();target.getParentFile().mkdirs();android.util.AtomicFile file=new android.util.AtomicFile(target);FileOutputStream out=null;try{out=file.startWrite();out.write(value.toString().getBytes("UTF-8"));file.finishWrite(out);lastBatteryDigest=sum;}catch(Exception e){file.failWrite(out);throw e;}}catch(Throwable e){error="游戏内存档未能写入，原文件已保留："+e.toString();}}
-    private void loadHandheldBattery()throws Exception{File file=handheldBatteryFile();if(!file.exists())return;if(file.length()>1500000)throw new IOException("游戏内存档过大，原文件已保留");ByteArrayOutputStream out=new ByteArrayOutputStream();try(InputStream in=new android.util.AtomicFile(file).openRead()){byte[] chunk=new byte[8192];int n;while((n=in.read(chunk))>0)out.write(chunk,0,n);}JSONObject value=new JSONObject(new String(out.toByteArray(),"UTF-8"));if(value.getInt("schema")!=1||!value.getString("format").equals(superNintendo?"sfc-sram-base64":megadrive?"md-sram-base64":"gba-sram-base64")||!value.getString("hash").equals(hash)||!value.getString("engine").equals(engineId))throw new IOException("游戏内存档来自不同版本或内核，原文件已保留");byte[] bytes=Base64.decode(value.getString("data"),Base64.DEFAULT);int n=((NativeLong)fn("retro_get_memory_size").invoke(NativeLong.class,new Object[]{0})).intValue();reportedSaveBytes=n;if(value.getInt("bytes")!=bytes.length||!digest(bytes).equals(value.getString("sha256")))throw new IOException("游戏内存档校验失败，原文件已保留");if(handheld){bytes=GbaSaveMemory.expand(bytes,n);n=bytes.length;}else if(bytes.length!=n||n<1||n>1048576)throw new IOException("游戏内存档大小不匹配，原文件已保留");Pointer memory=(Pointer)fn("retro_get_memory_data").invoke(Pointer.class,new Object[]{0});if(memory==null)throw new IOException("游戏存档内存未就绪");memory.write(0,bytes,0,n);lastBatteryDigest=value.getString("sha256");}
+    private void loadHandheldBattery()throws Exception{File file=handheldBatteryFile();if(!file.exists())return;if(file.length()>1500000)throw new IOException("游戏内存档过大，原文件已保留");ByteArrayOutputStream out=new ByteArrayOutputStream();try(InputStream in=new android.util.AtomicFile(file).openRead()){byte[] chunk=new byte[8192];int n;while((n=in.read(chunk))>0)out.write(chunk,0,n);}JSONObject value=new JSONObject(new String(out.toByteArray(),"UTF-8"));if(value.getInt("schema")!=1||!value.getString("format").equals(superNintendo?"sfc-sram-base64":megadrive?"md-sram-base64":"gba-sram-base64")||!value.getString("hash").equals(hash))throw new IOException("游戏内存档来自不同游戏或版本，原文件已保留");byte[] bytes=Base64.decode(value.getString("data"),Base64.DEFAULT);int n=((NativeLong)fn("retro_get_memory_size").invoke(NativeLong.class,new Object[]{0})).intValue();reportedSaveBytes=n;if(value.getInt("bytes")!=bytes.length||!digest(bytes).equals(value.getString("sha256")))throw new IOException("游戏内存档校验失败，原文件已保留");if(handheld){bytes=GbaSaveMemory.expand(bytes,n);n=bytes.length;}else if(bytes.length!=n||n<1||n>1048576)throw new IOException("游戏内存档大小不匹配，原文件已保留");Pointer memory=(Pointer)fn("retro_get_memory_data").invoke(Pointer.class,new Object[]{0});if(memory==null)throw new IOException("游戏存档内存未就绪");memory.write(0,bytes,0,n);lastBatteryDigest=value.getString("sha256");}
     private void saveBattery(){if(!batteryReady)return;if(handheld||megadrive||superNintendo){saveHandheldBattery();return;}try{int n=((NativeLong)fn("retro_get_memory_size").invoke(NativeLong.class,new Object[]{0})).intValue();if(n<=0||n>1024*1024||batteryFile==null)return;Pointer p=(Pointer)fn("retro_get_memory_data").invoke(Pointer.class,new Object[]{0});if(p==null)return;android.util.AtomicFile file=new android.util.AtomicFile(batteryFile);FileOutputStream stream=null;try{stream=file.startWrite();stream.write(p.getByteArray(0,n));file.finishWrite(stream);}catch(IOException e){file.failWrite(stream);}}catch(Throwable ignored){}}
     private void loadBattery()throws Exception{if(handheld||megadrive||superNintendo){loadHandheldBattery();return;}try{if(batteryFile==null||!batteryFile.exists())return;int n=((NativeLong)fn("retro_get_memory_size").invoke(NativeLong.class,new Object[]{0})).intValue();if(n<1||n>1024*1024)return;byte[] data=new byte[n];FileInputStream in=new android.util.AtomicFile(batteryFile).openRead();int count=0,k;while(count<n&&(k=in.read(data,count,n-count))>0)count+=k;in.close();if(count==n){Pointer p=(Pointer)fn("retro_get_memory_data").invoke(Pointer.class,new Object[]{0});if(p!=null)p.write(0,data,0,n);}}catch(Throwable ignored){}}
     private static String fileDigest(File file)throws Exception{MessageDigest md=MessageDigest.getInstance("SHA-256");try(InputStream in=new FileInputStream(file)){byte[] b=new byte[262144];int n;while((n=in.read(b))>0)md.update(b,0,n);}StringBuilder text=new StringBuilder();for(byte value:md.digest())text.append(String.format("%02x",value&255));return text.toString();}
