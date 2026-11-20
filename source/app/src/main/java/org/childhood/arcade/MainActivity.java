@@ -70,6 +70,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private final Object storeLock = new Object();
     private static final int PICK_FILE=10, EXPORT_FILE=11, PICK_FOLDER=12, MAX_LIBRARY=2000, MAX_SCAN_DEPTH=4;
     private volatile boolean scanning=false;
+    private volatile boolean importCancel=false;
     private static final SecureRandom LAN_RANDOM=new SecureRandom();
     private final Object lanLock=new Object();
     private volatile ServerSocket lanSocket=null;
@@ -201,9 +202,29 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         return action;
     }
     private void sendAction(int id,int action,boolean down,int rawCode){
+        trackPadCombo(action,down);
         int p=player(id);
         if(nativeNes!=null&&nativeNes.isRunning()){if(p>0)nativeNes.buttonFrom("pad:"+id,p,coreAction(action),down);}
         else if(p>0)js("Arcade.nativeKey("+action+","+down+","+id+",true,false,"+rawCode+")");
+    }
+    private volatile long comboSelectAt=0,comboStartAt=0;
+    private boolean comboFired=false;
+    /** Select+Start held together opens the pause menu, so a pad-only player never needs the TV remote. */
+    private void trackPadCombo(int action,boolean down){
+        long now=android.os.SystemClock.elapsedRealtime();
+        if(action==GamepadProfile.SELECT)comboSelectAt=down?now:0;
+        else if(action==GamepadProfile.START)comboStartAt=down?now:0;
+        else return;
+        if(!down){if(comboSelectAt==0&&comboStartAt==0)comboFired=false;return;}
+        if(comboSelectAt>0&&comboStartAt>0&&!comboFired){
+            uiHandler.postDelayed(new Runnable(){public void run(){
+                if(comboSelectAt>0&&comboStartAt>0&&!comboFired){
+                    comboFired=true;
+                    if(nativeNes!=null&&nativeNes.isRunning())try{nativeNes.pause();}catch(Throwable ignored){}
+                    js("Arcade.togglePauseMenu()");
+                }
+            }},1000);
+        }
     }
     private void syncAction(int id,int action,int rawCode){
         PadState st=state(id);
@@ -316,7 +337,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             final Uri tree=data.getData();
             try{getContentResolver().takePersistableUriPermission(tree,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}
             if(scanning){js("Arcade.libraryResult(0,0,'正在导入游戏，请稍候')");return;}
-            scanning=true;
+            scanning=true;importCancel=false;
             new Thread(new Runnable(){public void run(){
                 int added=0,skipped=0;String error=null;
                 try{int[] value=importFolder(tree);added=value[0];skipped=value[1];}
@@ -626,6 +647,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         int added=0,skipped=0;
         try{
             for(int i=0;i<found.size();i++){
+                if(importCancel)throw new IOException("已取消导入");
                 Candidate candidate=found.get(i);
                 String shape=candidate.relative+"|"+candidate.size;
                 if(knownShapes.contains(shape)){skipped++;continue;}
@@ -860,6 +882,28 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 lanWrite(socket,200,"ok");
                 return;
             }
+            if(target.startsWith("/command/")){
+                if(!lanTokenOk(target.substring(9),token)){lanWrite(socket,403,"禁止访问");return;}
+                String client=lanParam(query,"c"),cmd=lanParam(query,"cmd");
+                if(client==null||!client.matches("[a-z0-9]{6,16}")){lanWrite(socket,400,"参数错误");return;}
+                int slot=0,leftSlot=0;
+                synchronized(lanInputLock){
+                    LanClient entry=lanClients.get(client);
+                    if(entry!=null){entry.seen=android.os.SystemClock.elapsedRealtime();slot=entry.slot;}
+                    if("leave".equals(cmd)&&entry!=null){
+                        leftSlot=entry.slot;
+                        lanClients.remove(client);
+                        if(leftSlot>=1&&leftSlot<=2&&client.equals(lanSlots[leftSlot-1]))lanSlots[leftSlot-1]=null;
+                        try{if(nativeNes!=null)nativeNes.releaseSource("lan:"+client);}catch(Throwable ignored){}
+                        slot=0;
+                    }
+                }
+                if("leave".equals(cmd)){if(leftSlot>0)js("Arcade.remoteLeft("+leftSlot+")");lanWrite(socket,200,"ok");return;}
+                if(slot<=0){lanWrite(socket,410,"手柄位置已收回");return;}
+                if("pause".equals(cmd))js("Arcade.togglePauseMenu()");
+                lanWrite(socket,200,"ok");
+                return;
+            }
             if(target.startsWith("/backup/")){
                 if(!lanTokenOk(target.substring(8),token)){lanWrite(socket,403,"禁止访问");return;}
                 File zip=null;
@@ -941,10 +985,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         +"header{text-align:center;font-size:16px;letter-spacing:2px;color:#f7c948}"
         +"header span{display:block;margin-top:4px;font-size:11px;letter-spacing:0;color:#8f8f9d}"
         +".row{display:flex;justify-content:space-between;align-items:center;gap:10px}"
-        +"#lat{flex:1;min-width:74px;font-size:11px;color:#8f8f9d}"
+        +"#lat{flex:1;min-width:52px;font-size:11px;color:#8f8f9d}"
         +".players{display:flex;gap:8px}"
         +".players .btn{width:56px;height:36px;font-size:13px;border-radius:18px}"
-        +"#burst{width:70px;height:36px;font-size:12px;border-radius:18px}"
+        +"#burst,#pause{width:56px;height:36px;font-size:12px;border-radius:18px}"
         +".controls{justify-content:space-around;padding:0 4px}"
         +".pad,.face{display:grid;grid-template-columns:repeat(3,min(62px,14.5vw));grid-template-rows:repeat(3,min(62px,14.5vw));gap:6px;margin:0 auto}"
         +".joy{position:relative;width:min(112px,30vw);height:min(112px,30vw);border-radius:50%;background:#1a1a21;border:2px solid #3f3f4d;touch-action:none;user-select:none;-webkit-user-select:none;flex:0 0 auto}"
@@ -957,10 +1001,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         +"#up{grid-area:1/2}#left{grid-area:2/1}#right{grid-area:2/3}#down{grid-area:3/2}"
         +"#x{grid-area:1/2}#y{grid-area:2/1}#a{grid-area:2/3}#b{grid-area:3/2}"
         +"</style></head><body>"
-        +"<header>已连接童年游戏厅<span>按住按钮控制游戏 · 手机需与电视同一网络</span></header>"
+        +"<header>已连接童年游戏厅<span><a id='leave' style='color:#f7c948'>离开</a> · 按住按钮控制游戏 · 请保持屏幕常亮</span></header>"
         +"<div class='row topbar'><span id='lat'>连接中…</span>"
         +"<div class='players'><button class='btn pbtn on' data-p='1'>1P</button><button class='btn pbtn' data-p='2'>2P</button></div>"
-        +"<button class='btn' id='burst'>连发关</button></div>"
+        +"<button class='btn' id='burst'>连发关</button><button class='btn' id='pause'>暂停</button></div>"
         +"<div class='row controls'><div class='pad'>"
         +"<button class='btn' id='up' data-b='4'>▲</button>"
         +"<button class='btn' id='left' data-b='6'>◀</button>"
@@ -983,7 +1027,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         +"</div>"
         +"<script>(function(){var T='__TOKEN__',C='__CLIENT__',P=0,ready=false,active={},burst=false,burstTimers={},offline=false,wanted=1;"
         +"try{var saved=sessionStorage.getItem('padClient');if(saved&&/^[a-z0-9]{6,16}$/.test(saved))C=saved;else sessionStorage.setItem('padClient',C);}catch(err){}"
-        +"var nodes=document.querySelectorAll('[data-b]'),pnodes=document.querySelectorAll('[data-p]'),lat=document.getElementById('lat'),burstBtn=document.getElementById('burst');"
+        +"var nodes=document.querySelectorAll('[data-b]'),pnodes=document.querySelectorAll('[data-p]'),lat=document.getElementById('lat'),burstBtn=document.getElementById('burst'),pauseBtn=document.getElementById('pause'),leaveBtn=document.getElementById('leave'),left=false;"
         +"try{if(localStorage.getItem('padPlayer')==='2')wanted=2;}catch(err){}P=wanted;"
         +"function status(text,fail){lat.textContent=text;lat.style.color=fail?'#ff6b6b':'#8f8f9d';}"
         +"function vibrate(){try{if(navigator.vibrate)navigator.vibrate(15);}catch(err){}}"
@@ -998,6 +1042,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         +"function up(el,e){if(e)e.preventDefault();var b=el.getAttribute('data-b');if(!active[b])return;el.classList.remove('on');padUp(b);}"
         +"function applyBurst(on){burst=on;burstBtn.textContent=on?'连发开':'连发关';burstBtn.classList.toggle('on',on);var keys=['0','1','8','9'];for(var i=0;i<keys.length;i++){var b=keys[i];if(active[b]){if(on)startBurst(b);else stopBurst(b,true);}}}"
         +"burstBtn.addEventListener('click',function(){vibrate();applyBurst(!burst);});"
+        +"function command(c){return fetch('/command/'+T+'?c='+C+'&cmd='+c,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('http');});}"
+        +"function leavePad(){if(left)return;left=true;releaseAll();command('leave').catch(function(){});ready=false;status('已离开，可以关闭页面',false);}"
+        +"if(pauseBtn)pauseBtn.addEventListener('click',function(){vibrate();command('pause').catch(function(){});});"
+        +"if(leaveBtn)leaveBtn.addEventListener('click',function(e){if(e)e.preventDefault();vibrate();leavePad();});"
         +"for(var i=0;i<nodes.length;i++){(function(el){"
         +"if(window.PointerEvent){"
         +"el.addEventListener('pointerdown',function(e){down(el,e);});"
@@ -1032,7 +1080,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         +"document.addEventListener('visibilitychange',function(){if(document.hidden)releaseAll();else if(ready)claim(P).catch(function(){});});"
         +"window.addEventListener('pagehide',releaseAll);"
         +"claim(wanted).catch(function(){});"
-        +"setInterval(function(){if(!ready){claim(wanted).catch(function(){});return;}fetch('/ping/'+T+'?c='+C,{cache:'no-store'}).then(function(r){if(r.status===410){ready=false;releaseAll();status('正在重新连接…',true);claim(wanted).catch(function(){});return;}if(!r.ok)throw new Error('http');if(offline){offline=false;status('已连接 · '+(P===1?'1P':'2P'),false);}}).catch(function(){if(!ready)return;offline=true;status('已断开',true);releaseAll();});},2000);"
+        +"setInterval(function(){if(left)return;if(!ready){claim(wanted).catch(function(){});return;}fetch('/ping/'+T+'?c='+C,{cache:'no-store'}).then(function(r){if(r.status===410){ready=false;releaseAll();status('正在重新连接…',true);claim(wanted).catch(function(){});return;}if(!r.ok)throw new Error('http');if(offline){offline=false;status('已连接 · '+(P===1?'1P':'2P'),false);}}).catch(function(){if(!ready)return;offline=true;status('已断开',true);releaseAll();});},2000);"
         +"})();</script></body></html>";
     private static final String RESTORE_PAGE="<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
         +"<meta name='viewport' content='width=device-width,initial-scale=1,user-scalable=no'>"
@@ -1086,6 +1134,9 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public String nativeNesStart(String data,String hash){return nativeNes.load(data,hash);}
         @JavascriptInterface public void nativeNesPause(){nativeNes.pause();}
         @JavascriptInterface public void nativeNesResume(){nativeNes.resume();}
+        @JavascriptInterface public void cancelImportFolder(){importCancel=true;}
+        @JavascriptInterface public String appVersion(){try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception e){return "1.0.0";}}
+        @JavascriptInterface public long freeBytes(){try{return new StatFs(getFilesDir().getAbsolutePath()).getAvailableBytes();}catch(Throwable e){return 0;}}
         @JavascriptInterface public void nativeNesClose(){nativeNes.close();}
         @JavascriptInterface public void nativeNesButton(int player,int button,boolean down){nativeNes.button(player,button,down);}
         @JavascriptInterface public void nativeNesButtonFrom(String source,int player,int button,boolean down){nativeNes.buttonFrom("js:"+source,player,button,down);}
