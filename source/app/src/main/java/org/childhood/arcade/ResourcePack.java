@@ -71,7 +71,7 @@ public final class ResourcePack {
             error = "请先检查游戏资源";
             return;
         }
-        if ("downloading".equals(phase) || "installing".equals(phase)) return;
+        if ("checking".equals(phase) || "downloading".equals(phase) || "installing".equals(phase)) return;
         if (AppUpdates.isMetered(context) && !allowMetered) {
             phase = "metered";
             error = "当前网络按流量计费，建议在 Wi-Fi 下下载游戏资源";
@@ -237,8 +237,9 @@ public final class ResourcePack {
                 boolean saved = false;
                 try {
                     copy(zip.getInputStream(source), temp, sha, bytes);
-                    if (target.exists() && !target.delete()) throw new IOException("无法替换资源：" + name);
-                    if (!temp.renameTo(target)) throw new IOException("无法保存资源：" + name);
+                    if (!temp.renameTo(target)) {
+                        if (!target.exists() || !target.delete() || !temp.renameTo(target)) throw new IOException("无法保存资源：" + name);
+                    }
                     saved = true;
                 } finally {
                     if (!saved) temp.delete();
@@ -312,7 +313,10 @@ public final class ResourcePack {
                     current = new URL(url, location).toString();
                     continue;
                 }
-                if (code == 416 && existing > 0) throw new IOException("下载进度已失效，请重新下载");
+                if (code == 416 && existing > 0) {
+                    target.delete();
+                    throw new IOException("下载进度已失效，请重试");
+                }
                 boolean append = existing > 0 && code == 206;
                 if (!append) {
                     if (code != 200) throw new IOException("资源服务器返回 " + code);

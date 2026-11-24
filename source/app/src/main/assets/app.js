@@ -289,7 +289,7 @@ function renderGamepad(){
    +'<h3>按键布局</h3><div class="gp-actions">'+layouts+'</div>'
    +'<h3>按键绑定'+(capturing?' <small>正在绑定 '+GP_LABELS[gamepadCapture.action]+'：按下要绑定的键；按返回键取消</small>':'')+'</h3>'
    +'<div class="gp-binds">'+rows+'</div>'
-   +'<div class="gp-actions">'+(capturing?btn('取消重绑','gp-cancel','','primary','gp-cancel'):'')+btn('摇杆校准','gp-calibrate',p.key,'','gp-calibrate:'+p.key)+btn('交换 A / B','gp-swap',p.key,'','gp-swap:'+p.key)+btn('应用到所有手柄','gp-apply',p.key,'','gp-apply:'+p.key)+btn('恢复默认','gp-reset',p.key,'','gp-reset:'+p.key)+'</div>'
+   +'<div class="gp-actions">'+(capturing?btn('取消重绑','gp-cancel','','primary','gp-cancel'):btn('摇杆校准','gp-calibrate',p.key,'','gp-calibrate:'+p.key))+btn('交换 A / B','gp-swap',p.key,'','gp-swap:'+p.key)+btn('应用到所有手柄','gp-apply',p.key,'','gp-apply:'+p.key)+btn('恢复默认','gp-reset',p.key,'','gp-reset:'+p.key)+'</div>'
    +'</section>';
  }).join('');
  var toolbar=list.length?'<div class="gp-toolbar">'+btn('快速识别布局','gp-wizard','','primary','gp-wizard:')+'<span class="gp-wizard-tip">按 A、B、START 自动识别手柄布局</span></div>':'';
@@ -335,7 +335,7 @@ function startCalib(){
 }
 function startCalibPoll(){
  calibTimer=setInterval(function(){
-  if(!state.dialog||state.dialog.title!=='摇杆校准'){stopCalib();return;}
+  if(!state.dialog||state.dialog.title!=='摇杆校准'){if(native&&native.cancelGamepadCalibration)native.cancelGamepadCalibration();stopCalib();return;}
   var s=calibState();if(!s)return;
   var sig=s.state+'|'+s.remaining;
   if(sig!==calibSig){calibSig=sig;calibDialog();}

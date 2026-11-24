@@ -154,10 +154,11 @@ public final class AppUpdates {
             JSONObject json = new JSONObject(new String(fetch(context, MANIFEST_URL, MAX_MANIFEST), "UTF-8"));
             validate(json);
             prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply();
-            manifest = json;
             if (json.optInt("versionCode", 0) <= installedVersionCode()) {
+                manifest = null;
                 phase = "current";
             } else {
+                manifest = json;
                 phase = "available";
             }
         } catch (Throwable e) {
