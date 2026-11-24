@@ -183,7 +183,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     }
     private void hideSystemUI(){getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE);}
     private void js(final String value){if(web!=null)web.post(new Runnable(){public void run(){if(web!=null)web.evaluateJavascript("if(window.Arcade){"+value+"}",null);}});}
-    /** WebView reloads (for example after restoring a phone backup) drop JS state; replay the live pad slots. */
+    /** WebView 重载（例如恢复手机备份）会丢失 JS 状态，重放当前手柄玩家分配。 */
     private void resyncPlayers(){for(Map.Entry<Integer,Integer> entry:players.entrySet())js("Arcade.nativeRegister("+entry.getKey()+","+entry.getValue()+")");}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)hideSystemUI();}
     @Override protected void onResume(){super.onResume();pageActive=true;}
@@ -200,7 +200,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         String descriptor=device.getDescriptor();
         return gamepads.key(device)+":"+(descriptor==null?"":descriptor);
     }
-    /** Prefer the slot this controller used last time; otherwise take the first free one. */
+    /** 优先沿用该手柄上次的玩家位；否则占用第一个空闲位。 */
     private int player(int id){
         Integer existing=players.get(id);if(existing!=null)return existing;
         String fingerprint=padFingerprint(id);
@@ -217,7 +217,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private PadState state(int id){PadState s=padStates.get(id);if(s==null){s=new PadState();padStates.put(id,s);}return s;}
     private void startCapture(String key,int action){clearCapture(false);captureKey=key;captureAction=action;uiHandler.removeCallbacks(captureTimeout);uiHandler.postDelayed(captureTimeout,15000);}
     private void clearCapture(boolean notify){captureKey=null;captureAction=-1;uiHandler.removeCallbacks(captureTimeout);if(notify)js("Arcade.gamepadCaptureCanceled()");}
-    /** Watch a released stick for a few seconds and persist the measured drift as the deadzone. */
+    /** 观察松开后的摇杆数秒，把测得的漂移保存为死区。 */
     private void startCalibration(String key){
         if(key==null||key.length()==0)return;
         calibKey=key;calibStart=android.os.SystemClock.elapsedRealtime();calibDrift=0;calibDeadzone=0;calibError=null;calibActive=true;
@@ -251,7 +251,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         }catch(Exception ignored){}
         return out.toString();
     }
-    /** Two face button systems keep the familiar Y=A, X=B fallback. */
+    /** 两键手柄沿用 Y=A、X=B 的习惯映射。 */
     private int coreAction(int action){
         boolean two=nativeNes==null||nativeNes.isGba()||(!nativeNes.isArcade()&&!nativeNes.isMd()&&!nativeNes.isSfc());
         if(two){if(action==GamepadProfile.X)return GamepadProfile.B;if(action==GamepadProfile.Y)return GamepadProfile.A;}
@@ -265,7 +265,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     }
     private volatile long comboSelectAt=0,comboStartAt=0;
     private boolean comboFired=false;
-    /** Select+Start held together opens the pause menu, so a pad-only player never needs the TV remote. */
+    /** 同时按住 Select+Start 打开暂停菜单，只用手柄也能退出游戏。 */
     private void trackPadCombo(int action,boolean down){
         long now=android.os.SystemClock.elapsedRealtime();
         if(action==GamepadProfile.SELECT)comboSelectAt=down?now:0;
@@ -326,8 +326,8 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         js("Arcade.nativeKey(-1,"+down+","+id+","+pad+","+repeat+","+code+")");
         return true;
     }
-    // WebView consumes joystick motion before Activity.onGenericMotionEvent.
-    // Intercept at dispatch so hats/sticks follow the same native path as buttons.
+    // WebView 会先消费摇杆事件，导致 Activity.onGenericMotionEvent 收不到。
+    // 因此在 dispatch 层拦截，让 hat/摇杆和按键走同一条原生路径。
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e){
         int source=e.getSource();
         boolean joystick=(source&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK||(source&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD;

@@ -23,14 +23,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Device independent controller handling.
+ * 设备无关的手柄处理。
  *
- * Actions are resolved from whatever the connected device sends. Android's
- * standard key codes are always the default, so any controller the system
- * recognises works without configuration. The bundled table (derived from the
- * MIT licensed RetroArch joypad autoconfig data) is only an optional hint for
- * devices that label their buttons differently; a failed lookup falls back to
- * the defaults.
+ * 动作按设备实际发送的键码解析。Android 标准键码始终是默认值，因此系统能
+ * 识别的手柄无需配置即可使用。内置提示表（来自 MIT 许可的 RetroArch
+ * joypad autoconfig 数据）只用于按键标签不同的设备；查不到时回退默认值。
  */
 public final class GamepadProfile {
     public static final int A=0,B=1,SELECT=2,START=3,UP=4,DOWN=5,LEFT=6,RIGHT=7,X=8,Y=9,L=10,R=11,COUNT=12;
@@ -41,7 +38,7 @@ public final class GamepadProfile {
             "gamepad","game","pad","joystick","controller","control","usb","wireless","wired","hid","bluetooth",
             "android","input","device","generic","pc","for","the","and","with","of","xinput","dinput"));
 
-    /** One physical trigger: a key code, an analog axis direction or a hat direction. */
+    /** 一个物理触发器：键码、模拟轴方向或 hat 方向。 */
     public static final class Binding {
         public static final int KEY=0,AXIS=1,HAT=2;
         public final int type,code,dir;
@@ -78,7 +75,7 @@ public final class GamepadProfile {
                     if(v.startsWith("+")||v.startsWith("-"))return axis(Integer.parseInt(v.substring(1)),v.startsWith("-")?-1:1);
                     return axis(Integer.parseInt(v),1);
                 }
-                // RetroArch autoconfig syntax.
+                // RetroArch autoconfig 语法。
                 if(value.startsWith("btn:")){
                     String v=value.substring(4);
                     if(v.length()==0)return null;
@@ -96,7 +93,7 @@ public final class GamepadProfile {
         }
     }
 
-    /** Resolved bindings for one physical controller (identified by vendor/product id). */
+    /** 单个物理手柄（按 vendor/product id 识别）的最终绑定。 */
     public static final class Profile {
         public final String deviceKey,deviceName,vendorId,productId;
         public String matched="";
@@ -218,7 +215,7 @@ public final class GamepadProfile {
                 Binding binding=Binding.parse(entry.getValue());
                 if(binding==null)continue;
                 if(action>=UP&&action<=RIGHT){
-                    // Directions keep the universal dpad/hat defaults and add the profile hint.
+                    // 方向键沿用通用 dpad/hat 默认值，再叠加配置提示。
                     boolean duplicate=false;
                     for(int i=0;i<profile.bindings[action].size();i++){
                         Binding old=profile.bindings[action].get(i);
@@ -378,7 +375,7 @@ public final class GamepadProfile {
         return key!=null&&calibrated.getBoolean(key,false);
     }
 
-    // ------------------------------------------------------------------ library
+    // ------------------------------------------------------------------ 工具方法
 
     private void ensureLibrary(){
         if(libraryLoaded)return;
@@ -428,7 +425,7 @@ public final class GamepadProfile {
                 }
             }
         }catch(Exception ignored){
-            // A missing or unreadable table never disables the controller path.
+            // 配置表缺失或不可读时，不影响手柄基本输入。
         }finally{
             if(in!=null)try{in.close();}catch(Exception ignored){}
         }

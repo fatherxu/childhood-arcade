@@ -1,7 +1,7 @@
 package org.childhood.arcade;
-/** mGBA 0.11-212-7a12d6d libretro allocates savedata as GBA_SIZE_FLASH1M (128 KiB).
- * The detected EEPROM/flash length may change after boot or an instant restore.
- * Preserve the whole backing buffer; never truncate an existing 128 KiB record.
+/** mGBA 0.11-212-7a12d6d 的 libretro 内核固定按 GBA_SIZE_FLASH1M（128 KiB）分配存档。
+ * 启动或恢复即时存档后，检测到的 EEPROM/Flash 长度可能变化。
+ * 因此保留整个缓冲区，绝不截断已有的 128 KiB 存档。
  */
 public final class GbaSaveMemory {
  public static final int CAPACITY=128*1024;

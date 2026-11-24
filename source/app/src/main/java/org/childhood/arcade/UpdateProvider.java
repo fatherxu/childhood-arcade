@@ -11,7 +11,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 
-/** Read-only access to the single verified update APK for the system installer. */
+/** 只向系统安装器暴露单个已校验的更新 APK，且只读。 */
 public final class UpdateProvider extends ContentProvider {
     static final String AUTHORITY = "org.childhood.arcade.updates";
     static final String KEY_PATH = "apk_path";

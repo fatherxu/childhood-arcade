@@ -33,7 +33,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 
-/** Update manifest check, HTTPS download, SHA-256/signature verification and system installer handoff. */
+/** 检查更新清单、HTTPS 下载、SHA-256/签名校验，并交给系统安装器。 */
 public final class AppUpdates {
     static final String MANIFEST_URL = "https://github.com/fatherxu/childhood-arcade/releases/latest/download/update.json";
     static final String PREFS = "updates";
@@ -273,7 +273,7 @@ public final class AppUpdates {
         });
     }
 
-    /** One-shot result: the installed version reached the expected code, so the update succeeded. */
+    /** 一次性结果：安装后的版本号达到预期，说明更新成功。 */
     JSONObject launchResult() {
         JSONObject out = new JSONObject();
         int expected = prefs.getInt(KEY_EXPECTED, 0);

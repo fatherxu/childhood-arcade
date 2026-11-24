@@ -33,7 +33,7 @@ def backup(client,path):
 def restore(client,path):
     import hashlib
     path=Path(path).expanduser().resolve()
-    # Validate using the same allowlist as exported backups before touching the device.
+    # 在接触设备前，先按导出备份的同一份白名单校验。
     with zipfile.ZipFile(path) as z:
         total=0;seen=set()
         for e in z.infolist():

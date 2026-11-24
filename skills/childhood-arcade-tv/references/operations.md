@@ -4,7 +4,7 @@
 
 首次调用 `python3 scripts/setup_release.py --repo OWNER/REPO --serial 用户提供的IP`。GitHub Release 尚未创建、网络失败或哈希不符时，报告真实失败。用户可提供本地文件；运行 configure 时必须带 `--transport provider`、已核实 APK 哈希和资源 manifest 路径。首次仍需在电视开启 ADB 并允许电脑。
 
-status 只看本地配置；doctor --serial IP 为只读检查。deploy --serial IP 绑定明确目标并安装，更新前备份，不卸载、不清数据；wrong_model、target_changed、signature_conflict、backup_unavailable 时停止并保留数据。0.7.4 调试签名与 1.0.0 发行签名不同，不能直接覆盖。
+status 只看本地配置；doctor --serial IP 为只读检查。deploy --serial IP 绑定明确目标并安装，更新前备份，不卸载、不清数据；wrong_model、target_changed、signature_conflict、backup_unavailable 时停止并保留数据。旧版调试签名（0.7.4 及更早）与 1.0.x 发行签名不同，不能直接覆盖。
 
 配置、备份与报告默认位于 ~/.config/childhood-arcade，--home 或 ARCADE_DEPLOY_HOME 可隔离。配置和备份有个人路径和设备信息，不上传仓库。
 

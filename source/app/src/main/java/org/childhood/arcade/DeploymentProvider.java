@@ -1,6 +1,6 @@
 package org.childhood.arcade;
 import android.content.*;import android.database.Cursor;import android.net.Uri;import android.os.*;import android.util.Base64;import org.json.*;import java.io.*;import java.security.MessageDigest;import java.util.zip.*;
-/** ADB-only release transport. No debug flag, network server or arbitrary path API. */
+/** 仅通过 ADB 使用的正式版传输通道：不依赖调试开关，不提供网络服务或任意路径接口。 */
 public final class DeploymentProvider extends ContentProvider {
  private void shellOnly(){int uid=Binder.getCallingUid();if(uid!=2000&&uid!=0)throw new SecurityException("ADB shell required");}
  public boolean onCreate(){try{recoverRestore();}catch(Exception e){android.util.Log.e("ArcadeDeploy","恢复日志异常，已保留现有数据",e);}return true;}

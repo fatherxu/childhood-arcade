@@ -1,6 +1,6 @@
 package org.childhood.arcade;
 import java.io.*;import java.security.MessageDigest;import org.json.JSONObject;
-/** Selected-app resource installation; no network, game extraction, or unrelated file access. */
+/** 以应用身份安装资源；不提供网络、游戏解包或无关文件访问。 */
 public final class ResourceTool {
  
  private static String digest(File file)throws Exception{MessageDigest md=MessageDigest.getInstance("SHA-256");try(InputStream in=new FileInputStream(file)){byte[] b=new byte[262144];int n;while((n=in.read(b))>0)md.update(b,0,n);}StringBuilder s=new StringBuilder();for(byte b:md.digest())s.append(String.format("%02x",b&255));return s.toString();}

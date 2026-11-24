@@ -28,7 +28,7 @@
   NativeEngine.prototype.restore=function(save){
     var self=this;if(!save||save.schema!==1||save.hash!==this.hash||!save.state)throw new Error('存档与当前游戏版本不匹配');
     if(save.engine==='jsnes-2.1.0'&&this.kind==='nes'){
-      // Retain old progress with its original interpreter; never relabel its state.
+      // 旧存档仍交给原解释器恢复，不能把它的状态直接当成原生内核存档。
       if(this.legacy)return this.legacy.restore(save);
       var legacy=new Base(this.canvas);legacy.ensureAudio();return legacy.load(this.binary,this.hash,this.game).then(function(){try{legacy.restore(save);}catch(e){legacy.close();throw e;}bridge.nativeNesClose();self.legacy=legacy;self.legacy.setVolume(self.volume);self.legacy.onError=function(e){if(self.onError)self.onError(e);};});
     }

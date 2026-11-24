@@ -20,7 +20,7 @@ import java.security.MessageDigest;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import org.json.JSONObject;
 
-/** Libretro host. Game execution and audio run outside the legacy WebView. */
+/** Libretro 宿主。游戏执行与音频都在旧 WebView 之外运行。 */
 public final class NativeNes {
     public static final String SFC_FAST_ENGINE="snes9x2005-native-7e15337d8caa";
     public static final String SFC_ENGINE="snes9x2005plus-native-ada4dbf17de5";
@@ -204,7 +204,7 @@ public final class NativeNes {
         track=new AudioTrack(AudioManager.STREAM_MUSIC,sampleRate,AudioFormat.CHANNEL_OUT_STEREO,AudioFormat.ENCODING_PCM_16BIT,Math.max(min,(int)(sampleRate/fps)*8),AudioTrack.MODE_STREAM);
         if(track.getState()!=AudioTrack.STATE_INITIALIZED)throw new IOException("游戏声音初始化失败");track.setVolume(volume);
         batteryFile=new File(activity.getFilesDir(),"nes/"+hash+".srm");loadBattery();batteryReady=true;
-        // Produce a first picture without advancing audible output.
+        // 先渲染首帧，但不推进可听输出。
         run.invokeVoid(new Object[]{});frames=1;releaseAll();
         for(int player=0;player<2;player++)fn("retro_set_controller_port_device").invokeVoid(new Object[]{player,1});
     }
@@ -238,8 +238,8 @@ public final class NativeNes {
     public boolean isMd(){return megadrive;}
     public boolean isSfc(){return superNintendo;}
     public void button(int player,int button,boolean down){buttonFrom("legacy",player,button,down);}
-    /** Each source (touch, pad:&lt;id&gt;, lan:&lt;client&gt;) holds its own press counts so one
-     *  controller releasing a key can never clear a key another source still holds. */
+    /** 每个来源（触屏、pad:&lt;id&gt;、lan:&lt;client&gt;）各自维护按下计数，
+     *  避免一个手柄松开按键时清掉另一个来源仍按住的状态。 */
     public void buttonFrom(String source,int player,int button,boolean down){
         if(down)inputStamp.set(System.nanoTime());
         if(handheld&&player!=1)return;

@@ -204,8 +204,8 @@ class Client:
         if getattr(self, "transport", None) == "provider":
             from release_transport import call
             return call(self, "health")
-        # Xiaomi Android 6 pidof returns every PID, ignoring the package argument.
-        # Match the exact UI-process name instead of trusting its first result.
+        # 小米 Android 6 的 pidof 会忽略包名参数并返回所有 PID。
+        # 因此精确匹配 UI 进程名，不信任第一个结果。
         rows = self.shell('ps', '-A', allow_failure=True).splitlines()
         pid = [row.split()[1] for row in rows if len(row.split()) > 1 and row.split()[-1] == PACKAGE]
         if not pid:
@@ -326,7 +326,7 @@ def _deploy(home, config, client, apk, report, announce):
             error = str(exception)
         time.sleep(0.3)
     image = client.run(['-s', client.serial, 'exec-out', 'screencap', '-p'], allow_failure=True, binary=True)
-    # Some Xiaomi Android 6 builds print "argc: 3" before the raw PNG bytes.
+    # 部分小米 Android 6 固件会在 PNG 原始字节前打印 "argc: 3"。
     png = image.find(b'\x89PNG\r\n\x1a\n')
     if 0 < png < 256:
         image = image[png:]

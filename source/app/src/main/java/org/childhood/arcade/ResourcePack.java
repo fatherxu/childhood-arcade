@@ -19,7 +19,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import javax.net.ssl.HttpsURLConnection;
 
-/** In-app game resource pack download and verified per-file installation. */
+/** 应用内下载游戏资源包，并逐文件校验后安装。 */
 public final class ResourcePack {
     static final String PREFS = "resources";
     static final String KEY_SHA = "pack_sha256";
@@ -255,7 +255,7 @@ public final class ResourcePack {
         }
     }
 
-    /** Copy one archive entry while checking its declared SHA-256 and size. */
+    /** 复制单个压缩包条目，同时核对声明的 SHA-256 与大小。 */
     private void copy(InputStream in, File temp, String expectedSha, long expectedBytes) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         FileOutputStream out = new FileOutputStream(temp);
@@ -385,7 +385,7 @@ public final class ResourcePack {
         return out.toByteArray();
     }
 
-    /** Remove temp files left behind by an interrupted install before checking free space. */
+    /** 检查空间前先清理上次中断安装留下的临时文件。 */
     private void cleanTemp() {
         for (String folder : new String[]{"arcade", "gba", "md", "sfc"}) {
             File[] files = new File(context.getFilesDir(), folder + "/roms").listFiles();

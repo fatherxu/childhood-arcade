@@ -157,7 +157,7 @@ final class LanServer {
         final String id;int slot;long seen;
         LanClient(String id,int slot,long seen){this.id=id;this.slot=slot;this.seen=seen;}
     }
-    /** Caller holds lanInputLock. Returns 1/2, or 0 when both slots are taken. */
+    /** 调用方需持有 lanInputLock。返回 1/2；两个玩家位都被占用时返回 0。 */
     private int lanClaimSlot(String id,int preferred){
         long now=android.os.SystemClock.elapsedRealtime();
         LanClient client=lanClients.get(id);

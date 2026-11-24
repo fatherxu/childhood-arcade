@@ -1,5 +1,5 @@
 package org.childhood.arcade;
-/** Binary directions for retro games. Thresholds follow the per-device deadzone. */
+/** 复古游戏的方向二值化。阈值跟随每台设备校准后的死区。 */
 public final class ControllerDirections {
  private static final float HAT=.5f;
  private ControllerDirections(){}
@@ -7,7 +7,7 @@ public final class ControllerDirections {
  private static boolean negative(float value,float threshold){return value<-threshold;}
  private static boolean positive(float value,float threshold){return value>threshold;}
  /**
-  * @param press deadzone measured (or tuned) for this device, 0.2 to 0.8
+  * @param press 该设备实测（或校准）的死区，范围 0.2–0.8
   */
  public static boolean[] update(float hatX,float hatY,float stickX,float stickY,boolean[] old,float press){
   hatX=finite(hatX);hatY=finite(hatY);stickX=finite(stickX);stickY=finite(stickY);
