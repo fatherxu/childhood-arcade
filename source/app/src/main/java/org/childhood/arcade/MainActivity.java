@@ -65,6 +65,13 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private final HashMap<Integer, PadState> padStates = new HashMap<Integer, PadState>();
     private GamepadProfile gamepads;
     private volatile boolean gamepadMonitor=false;
+    private volatile String calibKey=null;
+    private volatile long calibStart=0;
+    private volatile float calibDrift=0;
+    private volatile float calibDeadzone=0;
+    private volatile boolean calibActive=false;
+    private volatile String calibError=null;
+    private final Runnable calibFinish=new Runnable(){public void run(){finishCalibration();}};
     private volatile String captureKey=null;
     private volatile int captureAction=-1;
     private final android.os.Handler uiHandler=new android.os.Handler(android.os.Looper.getMainLooper());
@@ -210,6 +217,40 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private PadState state(int id){PadState s=padStates.get(id);if(s==null){s=new PadState();padStates.put(id,s);}return s;}
     private void startCapture(String key,int action){clearCapture(false);captureKey=key;captureAction=action;uiHandler.removeCallbacks(captureTimeout);uiHandler.postDelayed(captureTimeout,15000);}
     private void clearCapture(boolean notify){captureKey=null;captureAction=-1;uiHandler.removeCallbacks(captureTimeout);if(notify)js("Arcade.gamepadCaptureCanceled()");}
+    /** Watch a released stick for a few seconds and persist the measured drift as the deadzone. */
+    private void startCalibration(String key){
+        if(key==null||key.length()==0)return;
+        calibKey=key;calibStart=android.os.SystemClock.elapsedRealtime();calibDrift=0;calibDeadzone=0;calibError=null;calibActive=true;
+        uiHandler.removeCallbacks(calibFinish);uiHandler.postDelayed(calibFinish,3400);
+    }
+    private void stopCalibration(){calibActive=false;calibKey=null;calibDrift=0;calibDeadzone=0;calibError=null;uiHandler.removeCallbacks(calibFinish);}
+    private void finishCalibration(){
+        if(!calibActive)return;
+        calibActive=false;
+        String key=calibKey;
+        if(key==null)return;
+        if(calibDrift>.5f){calibError="检测到摇杆被推动，请松开摇杆后重试";return;}
+        float deadzone=calibDrift<=.02f?.35f:Math.min(.8f,Math.max(.2f,calibDrift+.12f));
+        gamepads.saveDeadzone(key,deadzone);
+        calibDeadzone=deadzone;
+    }
+    private String calibrationStatus(){
+        JSONObject out=new JSONObject();
+        try{
+            long now=android.os.SystemClock.elapsedRealtime();
+            String state;
+            if(calibActive)state=now-calibStart<700?"warmup":"sampling";
+            else if(calibError!=null)state="error";
+            else if(calibDeadzone>0)state="done";
+            else state="idle";
+            out.put("state",state);
+            out.put("remaining",calibActive?Math.max(0,(3200-(now-calibStart)+999)/1000):0);
+            out.put("drift",Math.round(calibDrift*100)/100.0);
+            out.put("deadzone",Math.round(calibDeadzone*100)/100.0);
+            out.put("error",calibError==null?JSONObject.NULL:calibError);
+        }catch(Exception ignored){}
+        return out.toString();
+    }
     /** Two face button systems keep the familiar Y=A, X=B fallback. */
     private int coreAction(int action){
         boolean two=nativeNes==null||nativeNes.isGba()||(!nativeNes.isArcade()&&!nativeNes.isMd()&&!nativeNes.isSfc());
@@ -304,6 +345,13 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             float base=Math.max(st.maxX,st.maxY);
             if(base<=.45f)gamepads.saveDeadzone(profile.deviceKey,Math.min(.8f,Math.max(.2f,base+.12f)));
             st.sampleStart=-1;
+        }
+        if(calibActive&&calibKey!=null&&calibKey.equals(profile.deviceKey)){
+            long elapsed=now-calibStart;
+            if(elapsed>=700&&elapsed<=3200){
+                if(!Float.isNaN(x))calibDrift=Math.max(calibDrift,Math.abs(x));
+                if(!Float.isNaN(y))calibDrift=Math.max(calibDrift,Math.abs(y));
+            }
         }
         boolean[] old=axes.get(id);if(old==null)old=new boolean[4];
         boolean[] dirs=ControllerDirections.update(e.getAxisValue(MotionEvent.AXIS_HAT_X),e.getAxisValue(MotionEvent.AXIS_HAT_Y),x,y,old,profile.deadzone);
@@ -973,6 +1021,9 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             return out.toString();
         }
         @JavascriptInterface public void nativeGamepadMonitor(boolean on){gamepadMonitor=on;}
+        @JavascriptInterface public void startGamepadCalibration(String key){MainActivity.this.startCalibration(key);}
+        @JavascriptInterface public String gamepadCalibration(){return calibrationStatus();}
+        @JavascriptInterface public void cancelGamepadCalibration(){stopCalibration();}
         @JavascriptInterface public void nativeGamepadCapture(String key,int action){startCapture(key,action);}
         @JavascriptInterface public void nativeGamepadCaptureCancel(){clearCapture(false);}
         @JavascriptInterface public boolean nativeGamepadLayout(String key,String layout){return gamepads.setLayout(key,layout);}
