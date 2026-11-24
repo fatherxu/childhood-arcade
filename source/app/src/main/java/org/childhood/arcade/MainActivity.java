@@ -76,6 +76,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private volatile boolean importCancel=false;
     private android.content.SharedPreferences playerPrefs;
     private AppUpdates updates;
+    private ResourcePack resources;
     private LanServer lan;
     private LegacyFiles legacyFiles;
 
@@ -89,6 +90,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         if(!storeDir.exists()&&recovery.exists())recovery.renameTo(storeDir);
         storeDir.mkdirs();
         updates=new AppUpdates(this);
+        resources=new ResourcePack(this);
         legacyFiles=new LegacyFiles(this,new LegacyFiles.Host(){
             public void legacyImportFolder(File dir){startLegacyImport(dir);}
             public void legacyExportBackup(File dir){finishLegacyExport(dir);}
@@ -894,6 +896,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public void installUpdate(){updates.install(MainActivity.this);}
         @JavascriptInterface public void cancelUpdate(){updates.cancel();}
         @JavascriptInterface public String updateLaunchResult(){return updates.launchResult().toString();}
+        @JavascriptInterface public String checkResourcePack(){resources.check();return resources.status();}
+        @JavascriptInterface public void downloadResourcePack(boolean allowMetered){resources.download(allowMetered);}
+        @JavascriptInterface public String resourcePackStatus(){return resources.status();}
+        @JavascriptInterface public void cancelResourcePack(){resources.cancel();}
         @JavascriptInterface public long freeBytes(){try{return new StatFs(getFilesDir().getAbsolutePath()).getAvailableBytes();}catch(Throwable e){return 0;}}
         @JavascriptInterface public void nativeNesClose(){nativeNes.close();}
         @JavascriptInterface public void nativeNesButton(int player,int button,boolean down){nativeNes.button(player,button,down);}

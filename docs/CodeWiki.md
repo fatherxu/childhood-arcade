@@ -727,6 +727,9 @@ stateDiagram-v2
 | --- | --- |
 | [ControllerDirections](../source/app/src/main/java/org/childhood/arcade/ControllerDirections.java) | 方向键二值化：按下阈值 `0.65`、释放阈值 `0.60`（迟滞），十字键阈值 `0.5`；输出 `[上, 下, 左, 右]`。注释说明 SHANWAN 手柄静止偏置可达 `-0.53` |
 | [GbaSaveMemory](../source/app/src/main/java/org/childhood/arcade/GbaSaveMemory.java) | mGBA 固定按 `GBA_SIZE_FLASH1M`（128 KiB）分配存档；`expand()` 用 `0xFF` 填充，保证不截断既有存档 |
+| [ResourcePack](../source/app/src/main/java/org/childhood/arcade/ResourcePack.java) | 应用内下载游戏资源包：HTTPS + Range 断点续传、计量网络确认、空间预检、整包 SHA-256，再按包内 `manifest.json` 逐文件校验 SHA-256 后原子替换到 `files/<platform>/roms/`；安装成功后把包哈希写入 `SharedPreferences("resources")` |
+
+`ResourcePack` 读取 `update.json` 的 `resources` 块（由构建脚本从 `skills/childhood-arcade-tv/assets/release.json` 的 `game_pack` 生成）。设置页「游戏资源」入口由 [resource-ui.js](../source/app/src/main/assets/resource-ui.js) 驱动，只负责展示进度和触发桥接方法，下载/解压/校验全部在 Java 后台线程完成。
 
 ### 5.6 Manifest 摘要
 
@@ -760,6 +763,8 @@ library.js                (window.ArcadeLib)
 engine.js                 (window.ArcadeEngine = JSNES 引擎)
 multi-engine.js           (包装为 iframe 引擎)
 native-nes.js             (再包装为原生引擎, 最终覆盖 window.ArcadeEngine)
+update-ui.js              (软件更新对话框)
+resource-ui.js            (游戏资源对话框)
 app.js                    (应用主体)
 ```
 
@@ -970,10 +975,12 @@ window.Arcade = {
 8. 将 classes.dex 与 jniLibs/**/*.so 注入 APK
 9. zipalign -f -p 4
 10. apksigner sign（`java -jar tools/lib/apksigner.jar`，密码仅经环境变量 ARCADE_SIGNING_PASSWORD）+ verify
-11. 输出 childhood-arcade-<version>.apk 及其字节数、SHA-256，并生成 update.json（应用内更新清单）
+11. 输出 childhood-arcade-<version>.apk 及其字节数、SHA-256，并生成 update.json（应用内更新清单，含 apk 与 resources 两块）
 ```
 
 应用内更新由 [AppUpdates.java](../source/app/src/main/java/org/childhood/arcade/AppUpdates.java) 负责：仅允许 HTTPS、限制跳转与大小、校验 SHA-256/包名/versionCode/签名。客户端补充 `assets/isrg-root-x1.pem` 并在系统校验证书链失败时回退到该根证书，以兼容未内置 ISRG Root X1 的 Android 7.0 及更早电视。
+
+`update.json` 的 `resources` 块（`version` / `url` / `size` / `sha256`）指向 GitHub Release 中的 `childhood-arcade-games-<version>.zip`，由 `ResourcePack` 在电视上直接下载安装，不再依赖电脑部署。
 
 签名配置 JSON：`{ "keystore": "...", "alias": "...", "password": "..." }`，属于机密，不入库。
 
@@ -1319,7 +1326,7 @@ npm run test:browser
 }
 ```
 
-约束：名称白名单、路径相对、单文件 >0 且 ≤256 MiB、哈希必须匹配。
+约束：名称白名单、路径相对、单文件 >0 且 ≤256 MiB、哈希必须匹配。设备端 `ResourcePack` 使用同一份清单校验应用内下载的资源包，只接受 `game-pack/files/<name>` 且文件名与 `name` 一致。
 
 ### 11.3 电视端数据目录
 
@@ -1340,10 +1347,13 @@ npm run test:browser
 ├── restore.stage/            # provider 恢复暂存
 ├── restore.journal           # 恢复事务日志
 ├── *.restore.previous/       # 恢复回滚目录
-└── cache/running-game.nes    # NES 原生内核的工作副本
+├── cache/running-game.nes    # NES 原生内核的工作副本
+└── cache/resources/game-pack.part  # 应用内资源包断点续传缓存
 ```
 
 `SharedPreferences("deployment")` 保存 `page_loaded`（页面加载完成标记）、`health`（每秒刷新的页面状态 JSON）、`health_at`（单调时钟毫秒）。`DeploymentProvider` 仅当 `health_at` 距当前不超过 5 秒时返回 `health`，否则报 `Stale health`。
+
+`SharedPreferences("resources")` 保存已安装资源包的 `pack_sha256`、`pack_version`、`pack_files` 与 `pack_installed_at`，用于和应用内更新清单比对是否需要重新下载。
 
 ---
 

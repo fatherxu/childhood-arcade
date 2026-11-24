@@ -124,6 +124,10 @@ public final class AppUpdates {
     }
 
     boolean metered() {
+        return isMetered(context);
+    }
+
+    static boolean isMetered(Context context) {
         try {
             ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
             return manager != null && manager.isActiveNetworkMetered();
@@ -147,14 +151,13 @@ public final class AppUpdates {
 
     private void doCheck() {
         try {
-            JSONObject json = new JSONObject(new String(fetch(MANIFEST_URL, MAX_MANIFEST), "UTF-8"));
+            JSONObject json = new JSONObject(new String(fetch(context, MANIFEST_URL, MAX_MANIFEST), "UTF-8"));
             validate(json);
             prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply();
+            manifest = json;
             if (json.optInt("versionCode", 0) <= installedVersionCode()) {
-                manifest = null;
                 phase = "current";
             } else {
-                manifest = json;
                 phase = "available";
             }
         } catch (Throwable e) {
@@ -330,7 +333,7 @@ public final class AppUpdates {
     }
 
     /** Android 7.0 及更早版本不内置 ISRG Root X1，补充根证书后仍按系统规则校验证书链。 */
-    private SSLSocketFactory tls() {
+    static SSLSocketFactory trustedFactory(Context context) {
         SSLSocketFactory cached = tlsFactory;
         if (cached != null) return cached;
         synchronized (AppUpdates.class) {
@@ -377,21 +380,21 @@ public final class AppUpdates {
         }
     }
 
-    private HttpURLConnection open(URL url) throws IOException {
+    private static HttpURLConnection open(Context context, URL url) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         if ("https".equalsIgnoreCase(url.getProtocol())) {
-            SSLSocketFactory factory = tls();
+            SSLSocketFactory factory = trustedFactory(context);
             if (factory != null) ((HttpsURLConnection) connection).setSSLSocketFactory(factory);
         }
         return connection;
     }
 
-    private byte[] fetch(String address, long limit) throws IOException {
+    static byte[] fetch(Context context, String address, long limit) throws IOException {
         String current = address;
         for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
             URL url = new URL(current);
             if (!"https".equalsIgnoreCase(url.getProtocol())) throw new IOException("只允许 HTTPS 更新地址");
-            HttpURLConnection connection = open(url);
+            HttpURLConnection connection = open(context, url);
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(CONNECT_TIMEOUT);
             connection.setReadTimeout(READ_TIMEOUT);
@@ -426,7 +429,7 @@ public final class AppUpdates {
         for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
             URL url = new URL(current);
             if (!"https".equalsIgnoreCase(url.getProtocol())) throw new IOException("只允许 HTTPS 下载地址");
-            HttpURLConnection connection = open(url);
+            HttpURLConnection connection = open(context, url);
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(CONNECT_TIMEOUT);
             connection.setReadTimeout(READ_TIMEOUT);
@@ -478,7 +481,7 @@ public final class AppUpdates {
         throw new IOException("下载地址跳转次数过多");
     }
 
-    private long contentLength(HttpURLConnection connection) {
+    private static long contentLength(HttpURLConnection connection) {
         String header = connection.getHeaderField("Content-Length");
         if (header == null) return -1;
         try {
@@ -488,7 +491,7 @@ public final class AppUpdates {
         }
     }
 
-    private byte[] readLimited(InputStream in, long limit) throws IOException {
+    private static byte[] readLimited(InputStream in, long limit) throws IOException {
         java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
         byte[] buffer = new byte[8192];
         long totalRead = 0;
@@ -505,7 +508,7 @@ public final class AppUpdates {
         return out.toByteArray();
     }
 
-    private String sha256(File file) throws Exception {
+    static String sha256(File file) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         InputStream in = new java.io.FileInputStream(file);
         try {
