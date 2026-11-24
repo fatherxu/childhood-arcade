@@ -18,9 +18,11 @@ def setup(descriptor, home, repository=None):
         tag = data.get('tag', '')
         if not re.fullmatch(r'[A-Za-z0-9_.-]+', tag): raise ValueError('Invalid release tag')
         for key in ('apk', 'game_pack'):
+            entry_tag = data[key].get('tag') or data.get('tag', '')
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+', entry_tag): raise ValueError('Invalid release tag')
             name=data[key].get('filename', '')
             if not re.fullmatch(r'[A-Za-z0-9_.-]+', name): raise ValueError('Invalid release filename')
-            data[key]['url']='https://github.com/'+repository+'/releases/download/'+tag+'/'+name
+            data[key]['url']='https://github.com/'+repository+'/releases/download/'+entry_tag+'/'+name
     if data.get('schema') != 1:
         raise ValueError('版本清单格式无效')
     home = Path(home).expanduser().resolve()

@@ -1,16 +1,16 @@
 # 童年游戏厅（Childhood Arcade）Code Wiki
 
-> 仓库：`https://github.com/TT-csk/childhood-arcade`
-> 版本：1.0.0（APK `versionCode 20`）
+> 仓库：`https://github.com/fatherxu/childhood-arcade`
+> 版本：1.0.1（APK `versionCode 21`）
 > 文档定位：面向开发者的完整代码导读，覆盖架构、模块职责、关键类与函数、依赖关系、运行与构建方式、数据与安全模型。
 
 | 文档信息 | 值 |
 | --- | --- |
-| 对应代码 | commit `a43250a`（以仓库当前 HEAD 为准） |
-| APK 版本 | `versionName 1.0.0` / `versionCode 20` |
+| 对应代码 | 以仓库当前 HEAD 为准 |
+| APK 版本 | `versionName 1.0.1` / `versionCode 21` |
 | 资源白名单 | 52 项（街机 23、GBA 12、MD 8、SFC 9） |
 | 核对日期 | 2026-11-19 |
-| 核对方式 | 源码走读 + `python3 -m unittest discover -s tests -v`（28 项通过） |
+| 核对方式 | 源码走读 + `python3 -m unittest discover -s tests -v`（31 项通过） |
 
 **文档约定**
 
@@ -79,8 +79,8 @@
 
 | 事实 | 当前值 | 事实来源 |
 | --- | --- | --- |
-| APK 版本 | `1.0.0` / `versionCode 20` | [AndroidManifest.xml](../source/app/src/main/AndroidManifest.xml) |
-| APK 大小 | 22,770,426 字节（约 21.7 MiB） | [release.json](../skills/childhood-arcade-tv/assets/release.json) |
+| APK 版本 | `1.0.1` / `versionCode 21` | [version.json](../source/version.json) |
+| APK 大小 | 17,284,226 字节（约 16.5 MiB） | [release.json](../skills/childhood-arcade-tv/assets/release.json) |
 | 资源包大小 | 392,915,414 字节（约 374.7 MiB） | [release.json](../skills/childhood-arcade-tv/assets/release.json) |
 | 资源包解压后 | 约 495 MiB | 发布记录 / 构建时的资源清单 |
 | 游戏规模 | 179 款游戏、190 个版本 | `release-catalog.json`（Release 构建输入） |
@@ -90,7 +90,7 @@
 
 > 说明：`release-catalog.json` 不在本仓库中，179/190 是发布包的事实；仓库内的 `catalog.js` 是空占位。
 >
-> **版本号口径**：Android APK 使用 `1.0.0` / `versionCode 20`；`source/package.json` 的 `0.5.3` 仅用于前端开发依赖；`index.html` 中的 `?v=0.5.x` 是静态资源缓存参数，不是发布版本。
+> **版本号口径**：Android APK 版本以 [version.json](../source/version.json) 为唯一来源（当前 `1.0.1` / `versionCode 21`），构建时由 `build-production.py` 注入 Manifest；`source/package.json` 仅用于前端开发依赖；`index.html` 中的 `?v=` 是静态资源缓存参数，不是发布版本。
 
 ### 1.2 阅读路线
 
@@ -380,10 +380,10 @@ flowchart TD
 ```json
 {
   "schema": 1,
-  "version": "1.0.0", "tag": "v1.0.0", "transport": "provider",
-  "apk": { "filename": "childhood-arcade-1.0.0.apk", "sha256": "fb7a…d5c8", "bytes": 22770426 },
-  "game_pack": { "filename": "childhood-arcade-games-1.0.0.zip", "sha256": "d962…5c02", "bytes": 392915414 },
-  "repository": "TT-csk/childhood-arcade"
+  "version": "1.0.1", "tag": "v1.0.1", "transport": "provider",
+  "apk": { "filename": "childhood-arcade-1.0.1.apk", "sha256": "94ee…5e0a", "bytes": 17284226 },
+  "game_pack": { "tag": "v1.0.0", "filename": "childhood-arcade-games-1.0.0.zip", "sha256": "d962…5c02", "bytes": 392915414 },
+  "repository": "fatherxu/childhood-arcade"
 }
 ```
 
@@ -729,7 +729,7 @@ stateDiagram-v2
 
 ```xml
 package="org.childhood.arcade"
-versionCode="20" versionName="1.0.0"
+versionCode="21" versionName="1.0.1"
 minSdkVersion="23" targetSdkVersion="28"
 debuggable="false" allowBackup="false" usesCleartextTraffic="false"
 isGame="true"
@@ -960,12 +960,13 @@ window.Arcade = {
 3. 由 release-catalog.json 重新生成 catalog.js（仓库内该文件为空占位）
 4. aapt2 compile --dir res -o resources.zip
 5. aapt2 link -o base.apk -I android.jar --manifest … -A assets … --auto-add-overlay
+   （`--version-code` / `--version-name` / `--replace-version` 由 version.json 注入）
 6. javac -encoding UTF-8 -source 8 -target 8 -bootclasspath android.jar -cp jna-5.13.0.jar
 7. jar 打包 classes → d8 --min-api 23 --lib android.jar（classes.jar + JNA）
 8. 将 classes.dex 与 jniLibs/**/*.so 注入 APK
 9. zipalign -f -p 4
 10. apksigner sign（`java -jar tools/lib/apksigner.jar`，密码仅经环境变量 ARCADE_SIGNING_PASSWORD）+ verify
-11. 输出固定文件名 childhood-arcade-1.0.0.apk 及其字节数、SHA-256
+11. 输出 childhood-arcade-<version>.apk 及其字节数、SHA-256，并生成 update.json（应用内更新清单）
 ```
 
 签名配置 JSON：`{ "keystore": "...", "alias": "...", "password": "..." }`，属于机密，不入库。
@@ -1011,7 +1012,7 @@ sequenceDiagram
 
     U->>A: 把游戏厅装到电视，IP=192.168.x.x
     A->>S: setup_release.py --repo OWNER/REPO --serial IP
-    S->>G: GET childhood-arcade-1.0.0.apk
+    S->>G: GET childhood-arcade-1.0.1.apk
     G-->>S: APK（校验 SHA-256）
     S->>G: GET childhood-arcade-games-1.0.0.zip
     G-->>S: 资源包（校验 SHA-256）
@@ -1252,6 +1253,8 @@ python3 scripts/build-production.py \
   --signing-config /path/outside/repo/signing.json
 ```
 
+版本号默认读取 [version.json](../source/version.json)（`versionName` / `versionCode`），无需再手动改 Manifest；需要临时覆盖时传 `--version` / `--version-code`。传入 `--version-code` 会同时生成 `build-production/update.json`。
+
 前提：补齐 `release-catalog.json`、`app/libs/jna-5.13.0.jar`、`app/src/main/jniLibs/`、`assets/vendor/`、`assets/fonts/`、各平台 `player.html`。
 
 ### 10.6 前端预览（开发）
@@ -1485,7 +1488,7 @@ ROM 运行时二次校验（NativeNes 载入前 fileDigest）
 
 ### 14.4 发布新版本
 
-1. 更新 `AndroidManifest.xml` 的 `versionCode/versionName`。
+1. 更新 [version.json](../source/version.json) 的 `versionName/versionCode`（构建时自动注入 Manifest）。
 2. 更新 `skills/.../assets/release.json`（tag、文件名、字节数、SHA-256）。
 3. 更新 `docs/` 中版本相关说明。
 4. 生成 Release 附件：APK、游戏 ZIP、Skill ZIP、构建输入 ZIP、`SHA256SUMS.txt`。
@@ -1660,11 +1663,11 @@ ROM 运行时二次校验（NativeNes 载入前 fileDigest）
 
 ### 16.7 发布检查清单
 
-- [ ] `AndroidManifest.xml` 的 `versionCode` / `versionName` 已递增。
+- [ ] `version.json` 的 `versionCode` / `versionName` 已递增。
 - [ ] `release.json` 的 `tag`、文件名、字节数、SHA-256 与实际附件一致。
 - [ ] `deployment-resources.json` 的资源数量与 `manifest.json` 一致（当前 52 项）。
 - [ ] APK 通过 `zipalign -c` 与 `apksigner verify`。
-- [ ] 部署单元测试全部通过（当前 28 项）。
+- [ ] 部署单元测试全部通过（当前 31 项）。
 - [ ] 模拟器/真机完成“安装 → 页面可见 → 启动游戏 → 存档 → 备份 → 恢复”。
 - [ ] `doctor`、`deploy`、`backup`、`restore` 四条主路径均验证。
 - [ ] 至少一台 32 位 ARM 真机验证，不只依赖 64 位模拟器。

@@ -1,0 +1,107 @@
+name: release
+
+# 推送 v* 标签后自动构建、签名、生成 update.json 并创建 GitHub Release。
+# 前置条件：
+# 1) 仓库变量（Settings > Variables）可选：BUILD_INPUTS_REPO / BUILD_INPUTS_TAG / BUILD_INPUTS_ASSET，
+#    默认从当前仓库的 build-inputs 发布包下载 childhood-arcade-build-inputs.zip，
+#    解压后需得到 source/app/src/main/jniLibs（预编译原生核心不进入源码仓库）。
+# 2) 仓库密钥（Settings > Secrets）：ANDROID_KEYSTORE_BASE64、ANDROID_KEYSTORE_PASSWORD、ANDROID_KEY_ALIAS。
+# 3) source/version.json 的 versionName 必须与标签一致（如 1.0.1 对应 v1.0.1）。
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BUILD_INPUTS_REPO: ${{ vars.BUILD_INPUTS_REPO || github.repository }}
+      BUILD_INPUTS_TAG: ${{ vars.BUILD_INPUTS_TAG || 'build-inputs' }}
+      BUILD_INPUTS_ASSET: ${{ vars.BUILD_INPUTS_ASSET || 'childhood-arcade-build-inputs.zip' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;37.0.0"
+
+      - name: Read and verify version
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          v=json.load(open('source/version.json'))
+          print('VERSION_NAME='+v['versionName'])
+          print('VERSION_CODE='+str(v['versionCode']))
+          PY
+          test "$GITHUB_REF_NAME" = "v$VERSION_NAME" || { echo "标签 $GITHUB_REF_NAME 与 version.json 的 v$VERSION_NAME 不一致"; exit 1; }
+
+      - name: Restore native cores
+        run: |
+          if [ -d source/app/src/main/jniLibs ]; then
+            echo "jniLibs 已存在，跳过下载"
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/inputs"
+          gh release download "$BUILD_INPUTS_TAG" --repo "$BUILD_INPUTS_REPO" --pattern "$BUILD_INPUTS_ASSET" --dir "$RUNNER_TEMP/inputs"
+          unzip -q "$RUNNER_TEMP/inputs/$BUILD_INPUTS_ASSET" -d source/app/src/main
+          test -d source/app/src/main/jniLibs || { echo "build-inputs 中没有 jniLibs"; exit 1; }
+
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          test -n "$KEYSTORE_BASE64" || { echo "缺少 ANDROID_KEYSTORE_BASE64"; exit 1; }
+          test -n "$KEY_ALIAS" || { echo "缺少 ANDROID_KEY_ALIAS"; exit 1; }
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/signing.jks"
+          python3 - <<'PY'
+          import json, os
+          json.dump({"keystore": os.environ["RUNNER_TEMP"]+"/signing.jks", "alias": os.environ["KEY_ALIAS"], "password": os.environ["KEYSTORE_PASSWORD"]}, open(os.environ["RUNNER_TEMP"]+"/signing.json", "w"))
+          PY
+
+      - name: Build signed APK and update.json
+        run: |
+          NOTES_FILE="release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES_FILE" ]; then NOTES="$(cat "$NOTES_FILE")"; else NOTES="$(git log -1 --pretty=%s)"; fi
+          python3 source/scripts/build-production.py \
+            --jdk "$JAVA_HOME" \
+            --tools "$ANDROID_HOME/build-tools/37.0.0" \
+            --android-jar "$ANDROID_HOME/platforms/android-36/android.jar" \
+            --signing-config "$RUNNER_TEMP/signing.json" \
+            --release-tag "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --changelog "$NOTES"
+
+      - name: Verify packaged version
+        run: |
+          APK="source/build-production/childhood-arcade-$VERSION_NAME.apk"
+          "$ANDROID_HOME/build-tools/37.0.0/aapt2" dump badging "$APK" | grep -q "versionCode='$VERSION_CODE'"
+          "$ANDROID_HOME/build-tools/37.0.0/aapt2" dump badging "$APK" | grep -q "versionName='$VERSION_NAME'"
+
+      - name: Publish release
+        run: |
+          NOTES_FILE="release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES_FILE" ]; then NOTES="$(cat "$NOTES_FILE")"; else NOTES="$(git log -1 --pretty=%s)"; fi
+          gh release create "$GITHUB_REF_NAME" \
+            "source/build-production/childhood-arcade-$VERSION_NAME.apk" \
+            source/build-production/update.json \
+            --title "童年游戏厅 $VERSION_NAME" \
+            --notes "$NOTES" \
+            --latest

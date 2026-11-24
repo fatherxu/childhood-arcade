@@ -170,6 +170,7 @@ nav.nav-many button{flex:1 1 auto;white-space:nowrap;padding-left:.25em;padding-
 .update-progress{height:1.1em;border:2px solid var(--red);border-radius:999px;background:#fff3d8;overflow:hidden;margin:.8em 0}
 .update-progress i{display:block;height:100%;background:var(--red);transition:width .3s ease}
 .update-notes{white-space:normal;word-break:break-word}
+.update-badge{display:inline-block;margin:0 .2em;padding:.05em .5em;border-radius:999px;background:var(--red);color:#fff8ea;font-size:.85em;font-weight:700}
 .check-actions{display:flex;justify-content:center;flex-wrap:wrap;padding:1vh 0 2vh}
 .check-actions button{margin:.3em .5em;font-size:.95em}
 .gp-toolbar{display:flex;align-items:center;gap:1vw;flex-wrap:wrap}

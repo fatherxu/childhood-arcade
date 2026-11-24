@@ -6,8 +6,10 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.StatFs;
 import android.provider.Settings;
 import org.json.JSONObject;
 
@@ -27,6 +29,7 @@ public final class AppUpdates {
     static final String KEY_EXPECTED = "expected_version_code";
     static final String KEY_LAST_CHECK = "last_check_ms";
     private static final long MAX_APK = 200L * 1024 * 1024;
+    private static final long MIN_FREE = 50L * 1024 * 1024;
     private static final long MAX_MANIFEST = 64 * 1024;
     private static final int MAX_REDIRECTS = 4;
     private static final int CONNECT_TIMEOUT = 15000;
@@ -83,7 +86,7 @@ public final class AppUpdates {
         });
     }
 
-    synchronized void download() {
+    synchronized void download(boolean allowMetered) {
         final JSONObject current = manifest;
         if (current == null) {
             phase = "error";
@@ -91,6 +94,11 @@ public final class AppUpdates {
             return;
         }
         if ("downloading".equals(phase)) return;
+        if (metered() && !allowMetered) {
+            phase = "metered";
+            error = "当前网络按流量计费，建议在 Wi-Fi 下下载更新";
+            return;
+        }
         cancel = false;
         error = null;
         progress = 0;
@@ -100,6 +108,15 @@ public final class AppUpdates {
         start(new Runnable() {
             public void run() { doDownload(current); }
         });
+    }
+
+    boolean metered() {
+        try {
+            ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            return manager != null && manager.isActiveNetworkMetered();
+        } catch (Throwable e) {
+            return false;
+        }
     }
 
     void cancel() {
@@ -136,14 +153,21 @@ public final class AppUpdates {
         File temp = null;
         try {
             JSONObject apk = json.optJSONObject("apk");
+            long size = apk.optLong("size", 0);
+            long free = new StatFs(context.getCacheDir().getAbsolutePath()).getAvailableBytes();
+            if (free < size + MIN_FREE) throw new IOException("电视剩余空间不足，需要约 " + ((size + MIN_FREE) / 1024 / 1024) + " MB");
             File dir = new File(context.getCacheDir(), "update");
             if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("无法创建更新缓存目录");
             File target = new File(dir, "arcade-" + json.optInt("versionCode", 0) + ".apk");
             temp = new File(dir, "arcade.apk.part");
-            if (temp.exists() && !temp.delete()) throw new IOException("无法清理旧的下载文件");
-            downloadAll(apk.optString("url", ""), temp, apk.optLong("size", 0));
+            downloadAll(apk.optString("url", ""), temp, size);
             if (cancel) throw new IOException("已取消更新");
-            verifyPackage(temp, json);
+            try {
+                verifyPackage(temp, json);
+            } catch (Exception e) {
+                temp.delete();
+                throw e;
+            }
             if (!temp.renameTo(target)) {
                 if (target.exists()) target.delete();
                 if (!temp.renameTo(target)) throw new IOException("无法保存更新包");
@@ -156,7 +180,6 @@ public final class AppUpdates {
             prefs.edit().putString(UpdateProvider.KEY_PATH, target.getAbsolutePath()).apply();
             phase = "ready";
         } catch (Throwable e) {
-            if (temp != null) temp.delete();
             if (cancel) {
                 phase = "cancelled";
             } else {
@@ -217,6 +240,7 @@ public final class AppUpdates {
                         return;
                     }
                     if (manifest != null && manifest.optInt("versionCode", 0) > 0) {
+                        backupSaves();
                         prefs.edit().putInt(KEY_EXPECTED, manifest.optInt("versionCode", 0)).apply();
                     }
                     Intent intent = new Intent(Intent.ACTION_VIEW);
@@ -243,6 +267,9 @@ public final class AppUpdates {
                 out.put("updated", true);
                 out.put("versionCode", now);
                 out.put("versionName", installedVersionName());
+                cleanApk();
+            } else {
+                deleteTree(new File(context.getFilesDir(), "store.update-backup"));
             }
         } catch (Exception ignored) {
         }
@@ -260,6 +287,7 @@ public final class AppUpdates {
             out.put("currentVersionCode", installedVersionCode());
             out.put("currentVersionName", installedVersionName());
             out.put("lastCheck", prefs.getLong(KEY_LAST_CHECK, 0));
+            out.put("metered", metered());
             out.put("error", error == null ? JSONObject.NULL : error);
             JSONObject current = manifest;
             if (current != null) {
@@ -312,6 +340,11 @@ public final class AppUpdates {
     }
 
     private void downloadAll(String address, File target, long expected) throws IOException {
+        long existing = target.isFile() ? target.length() : 0;
+        if (existing > expected) {
+            target.delete();
+            existing = 0;
+        }
         String current = address;
         for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
             URL url = new URL(current);
@@ -322,6 +355,7 @@ public final class AppUpdates {
             connection.setReadTimeout(READ_TIMEOUT);
             connection.setRequestProperty("Accept", "application/octet-stream, */*");
             connection.setRequestProperty("User-Agent", "childhood-arcade-updater");
+            if (existing > 0) connection.setRequestProperty("Range", "bytes=" + existing + "-");
             try {
                 int code = connection.getResponseCode();
                 if (code >= 300 && code < 400) {
@@ -330,15 +364,22 @@ public final class AppUpdates {
                     current = new URL(url, location).toString();
                     continue;
                 }
-                if (code != 200) throw new IOException("下载服务器返回 " + code);
+                if (code == 416 && existing > 0) throw new IOException("下载进度已失效，请重试");
+                boolean append = existing > 0 && code == 206;
+                if (!append) {
+                    if (code != 200) throw new IOException("下载服务器返回 " + code);
+                    existing = 0;
+                }
                 long declared = contentLength(connection);
-                if (declared > MAX_APK) throw new IOException("更新包过大");
+                if (declared > 0 && existing + declared > expected) throw new IOException("更新包过大");
                 InputStream in = connection.getInputStream();
-                FileOutputStream out = new FileOutputStream(target);
+                FileOutputStream out = new FileOutputStream(target, append);
                 try {
                     byte[] buffer = new byte[262144];
-                    long written = 0;
+                    long written = existing;
                     int count;
+                    downloaded = written;
+                    if (expected > 0) progress = (int) Math.min(99, written * 100 / expected);
                     while ((count = in.read(buffer)) != -1) {
                         if (cancel) throw new IOException("已取消更新");
                         written += count;
@@ -402,13 +443,71 @@ public final class AppUpdates {
         return text.toString();
     }
 
+    private void backupSaves() {
+        File store = new File(context.getFilesDir(), "store");
+        if (!store.isDirectory()) return;
+        File backup = new File(context.getFilesDir(), "store.update-backup");
+        File temp = new File(context.getFilesDir(), "store.update-backup.tmp");
+        deleteTree(temp);
+        if (!copyTree(store, temp)) {
+            deleteTree(temp);
+            return;
+        }
+        deleteTree(backup);
+        if (!temp.renameTo(backup)) deleteTree(temp);
+    }
+
+    private boolean copyTree(File from, File to) {
+        if (from.isDirectory()) {
+            if (!to.isDirectory() && !to.mkdirs()) return false;
+            File[] children = from.listFiles();
+            if (children == null) return true;
+            for (File child : children) {
+                if (!copyTree(child, new File(to, child.getName()))) return false;
+            }
+            return true;
+        }
+        InputStream in = null;
+        FileOutputStream out = null;
+        try {
+            in = new java.io.FileInputStream(from);
+            out = new FileOutputStream(to);
+            byte[] buffer = new byte[65536];
+            int count;
+            while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
+            out.getFD().sync();
+            return true;
+        } catch (IOException e) {
+            return false;
+        } finally {
+            try { if (out != null) out.close(); } catch (IOException ignored) {}
+            try { if (in != null) in.close(); } catch (IOException ignored) {}
+        }
+    }
+
+    private void deleteTree(File file) {
+        if (file == null || !file.exists()) return;
+        File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) deleteTree(child);
+        }
+        file.delete();
+    }
+
+    private void cleanApk() {
+        File dir = new File(context.getCacheDir(), "update");
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) file.delete();
+    }
+
     private void cleanCache() {
         File dir = new File(context.getCacheDir(), "update");
         File[] files = dir.listFiles();
         if (files == null) return;
         long now = System.currentTimeMillis();
         for (File file : files) {
-            if (now - file.lastModified() > 60L * 60 * 1000) file.delete();
+            if (now - file.lastModified() > 7L * 24 * 60 * 60 * 1000) file.delete();
         }
     }
 }

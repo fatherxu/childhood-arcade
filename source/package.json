@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "start": "node scripts/serve.cjs",
+    "check": "node --check app/src/main/assets/app.js && node --check app/src/main/assets/update-ui.js",
     "test": "node --test tests/*.test.cjs",
     "test:browser": "node tests/browser.cjs"
   },
