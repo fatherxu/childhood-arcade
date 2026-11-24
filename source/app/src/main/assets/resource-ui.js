@@ -36,7 +36,7 @@ function buttons(s){
  if(name==='error')return [{text:'重试',primary:true,fn:function(){var s=status();if(s&&Number(s.total)>0)download(false);else check();}},close];
  return [close];
 }
-function show(){var s=status();ctx.dialog('游戏资源',body(s),buttons(s),0);}
+function show(){var s=status(),old=ctx.state.resourcePackInfo;ctx.state.resourcePackInfo=s;if(old&&s&&old.state===s.state&&old.progress===s.progress&&old.installed===s.installed&&old.error===s.error)return;ctx.dialog('游戏资源',body(s),buttons(s),0);}
 function stop(){if(poll){clearInterval(poll);poll=null;}}
 function startPoll(){stop();poll=setInterval(function(){if(!ctx.state.dialog||ctx.state.dialog.title!=='游戏资源'){stop();return;}var s=status();if(!s)return;show();if(s.state==='current'||s.state==='error'||s.state==='ready'||s.state==='cancelled'||s.state==='metered')stop();},700);}
 function check(){var api=native();if(!api||!api.checkResourcePack){ctx.toast('当前版本不支持应用内下载游戏资源');return;}try{api.checkResourcePack();}catch(e){}show();startPoll();}
