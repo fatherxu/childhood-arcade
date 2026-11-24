@@ -181,7 +181,7 @@
   function build(kind){
     var spec=LAYOUTS[kind]||LAYOUTS.nes;
     stopTurbo();
-    if(kind==='nes'&&turboEnabled)spec={grid:'four',buttons:[{i:0,t:'X',turbo:1},{i:1,t:'Y',turbo:1},{i:1,t:'B'},{i:0,t:'A'}]};
+    if(kind==='nes'&&turboEnabled)spec={grid:'four',buttons:[{i:1,t:'Y',turbo:1},{i:0,t:'X',turbo:1},{i:1,t:'B'},{i:0,t:'A'}]};
     root.innerHTML='';root.setAttribute('data-layout',kind);
     btns={};padEl=null;
     var left=make('div','tc-zone tc-left');
