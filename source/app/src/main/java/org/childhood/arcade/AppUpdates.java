@@ -100,13 +100,13 @@ public final class AppUpdates {
     }
 
     synchronized void download(boolean allowMetered) {
+        if ("checking".equals(phase) || "downloading".equals(phase) || "installing".equals(phase)) return;
         final JSONObject current = manifest;
         if (current == null) {
             phase = "error";
             error = "请先检查更新";
             return;
         }
-        if ("downloading".equals(phase)) return;
         if (metered() && !allowMetered) {
             phase = "metered";
             error = "当前网络按流量计费，建议在 Wi-Fi 下下载更新";

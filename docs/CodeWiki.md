@@ -726,7 +726,7 @@ stateDiagram-v2
 | 类 | 说明 |
 | --- | --- |
 | [ControllerDirections](../source/app/src/main/java/org/childhood/arcade/ControllerDirections.java) | 方向键二值化：按下阈值 `0.65`、释放阈值 `0.60`（迟滞），十字键阈值 `0.5`；输出 `[上, 下, 左, 右]`。注释说明 SHANWAN 手柄静止偏置可达 `-0.53` |
-| [GamepadProfile](../source/app/src/main/java/org/childhood/arcade/GamepadProfile.java) | 按手柄设备 key 持久化布局、按键绑定与摇杆死区（默认 `0.60`）。设置页「摇杆校准」调用 `startGamepadCalibration()`：先留 0.7 秒松手，再采样 2.5 秒内的最大轴偏移，超过 `0.5` 视为仍在推动并拒绝保存，否则保存 `漂移 + 0.12`（限制在 `0.20–0.80`） |
+| [GamepadProfile](../source/app/src/main/java/org/childhood/arcade/GamepadProfile.java) | 按手柄设备 key 持久化布局、按键绑定与摇杆死区（默认 `0.60`）。设置页「摇杆校准」调用 `startGamepadCalibration()`：先留 0.7 秒松手，再采样 2.5 秒内的最大轴偏移，超过 `0.5` 视为仍在推动并拒绝保存；否则保存 `漂移 + 0.12`（限制在 `0.20–0.80`，无漂移时取 `0.35`），并在 `SharedPreferences("gamepad-calibration")` 记录手动校准，之后自动死区测量不再覆盖该手柄 |
 | [GbaSaveMemory](../source/app/src/main/java/org/childhood/arcade/GbaSaveMemory.java) | mGBA 固定按 `GBA_SIZE_FLASH1M`（128 KiB）分配存档；`expand()` 用 `0xFF` 填充，保证不截断既有存档 |
 | [ResourcePack](../source/app/src/main/java/org/childhood/arcade/ResourcePack.java) | 应用内下载游戏资源包：HTTPS + Range 断点续传、计量网络确认、空间预检、整包 SHA-256，再按包内 `manifest.json` 逐文件校验 SHA-256 后原子替换到 `files/<platform>/roms/`；安装成功后把包哈希写入 `SharedPreferences("resources")` |
 
@@ -945,7 +945,7 @@ window.Arcade = {
 
 ### 7.1 APK 内资源白名单
 
-[deployment-resources.json](../source/app/src/main/assets/deployment-resources.json) 是设备端唯一可信的资源清单，共 **52 项**：
+[deployment-resources.json](../source/app/src/main/assets/deployment-resources.json) 是电脑部署（ContentProvider）使用的资源白名单，共 **52 项**；应用内下载的游戏资源包由 `game-pack/manifest.json` 提供同一份列表，并先校验整包 SHA-256：
 
 | 平台 | 数量 | 示例 |
 | --- | --- | --- |

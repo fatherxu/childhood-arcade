@@ -188,7 +188,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)hideSystemUI();}
     @Override protected void onResume(){super.onResume();pageActive=true;}
     @Override protected void onPause(){pageActive=false;if(nativeNes!=null)try{nativeNes.pause();}catch(Throwable ignored){}super.onPause();js("Arcade.lifecyclePause()");}
-    @Override protected void onDestroy(){if(lan!=null)lan.stop();if(nativeNes!=null){try{nativeNes.close();}catch(RuntimeException e){android.util.Log.w("ArcadeCore","退出时游戏线程未能及时停止",e);}}if(inputs!=null)inputs.unregisterInputDeviceListener(this);uiHandler.removeCallbacks(captureTimeout);if(web!=null){web.removeJavascriptInterface("NativeArcade");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){if(lan!=null)lan.stop();if(nativeNes!=null){try{nativeNes.close();}catch(RuntimeException e){android.util.Log.w("ArcadeCore","退出时游戏线程未能及时停止",e);}}if(inputs!=null)inputs.unregisterInputDeviceListener(this);uiHandler.removeCallbacks(captureTimeout);uiHandler.removeCallbacks(calibFinish);if(web!=null){web.removeJavascriptInterface("NativeArcade");web.destroy();web=null;}super.onDestroy();}
     private boolean gamepad(KeyEvent event){
         InputDevice device=InputDevice.getDevice(event.getDeviceId());
         int sources=device==null?event.getSource():device.getSources();
@@ -231,7 +231,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         if(key==null)return;
         if(calibDrift>.5f){calibError="检测到摇杆被推动，请松开摇杆后重试";return;}
         float deadzone=calibDrift<=.02f?.35f:Math.min(.8f,Math.max(.2f,calibDrift+.12f));
-        gamepads.saveDeadzone(key,deadzone);
+        if(!gamepads.saveCalibratedDeadzone(key,deadzone)){calibError="没有检测到该手柄，请保持连接后重试";return;}
         calibDeadzone=deadzone;
     }
     private String calibrationStatus(){
@@ -343,7 +343,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             if(!Float.isNaN(y))st.maxY=Math.max(st.maxY,Math.abs(y));
         }else if(st.sampleStart>0){
             float base=Math.max(st.maxX,st.maxY);
-            if(base<=.45f)gamepads.saveDeadzone(profile.deviceKey,Math.min(.8f,Math.max(.2f,base+.12f)));
+            if(base<=.45f&&!gamepads.hasCalibration(profile.deviceKey))gamepads.saveDeadzone(profile.deviceKey,Math.min(.8f,Math.max(.2f,base+.12f)));
             st.sampleStart=-1;
         }
         if(calibActive&&calibKey!=null&&calibKey.equals(profile.deviceKey)){

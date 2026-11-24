@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -50,8 +51,6 @@ public final class ResourcePack {
     ResourcePack(Context context) {
         this.context = context.getApplicationContext();
         this.prefs = this.context.getSharedPreferences(PREFS, 0);
-        File part = partFile();
-        if (part.isFile() && part.length() == 0) part.delete();
     }
 
     synchronized void check() {
@@ -65,13 +64,13 @@ public final class ResourcePack {
     }
 
     synchronized void download(boolean allowMetered) {
+        if ("checking".equals(phase) || "downloading".equals(phase) || "installing".equals(phase)) return;
         final JSONObject current = pack;
         if (current == null) {
             phase = "error";
             error = "请先检查游戏资源";
             return;
         }
-        if ("checking".equals(phase) || "downloading".equals(phase) || "installing".equals(phase)) return;
         if (AppUpdates.isMetered(context) && !allowMetered) {
             phase = "metered";
             error = "当前网络按流量计费，建议在 Wi-Fi 下下载游戏资源";
@@ -174,7 +173,7 @@ public final class ResourcePack {
             install(part);
             part.delete();
             prefs.edit().putString(KEY_SHA, sha).putString(KEY_VERSION, json.optString("version", ""))
-                    .putLong(KEY_AT, System.currentTimeMillis()).putInt(KEY_FILES, installed).apply();
+                    .putLong(KEY_AT, System.currentTimeMillis()).putInt(KEY_FILES, installed).commit();
             progress = 100;
             phase = "ready";
         } catch (Throwable e) {
@@ -193,6 +192,7 @@ public final class ResourcePack {
             JSONArray list = manifest.optJSONArray("files");
             if (list == null || list.length() == 0 || list.length() > MAX_FILES) throw new IOException("资源包清单为空或文件过多");
             long expected = 0, needed = 0, largest = 0;
+            HashSet<String> seen = new HashSet<String>();
             for (int i = 0; i < list.length(); i++) {
                 JSONObject entry = list.optJSONObject(i);
                 if (entry == null) throw new IOException("资源包清单格式不正确");
@@ -202,6 +202,7 @@ public final class ResourcePack {
                 long bytes = entry.optLong("bytes", -1);
                 if (bytes <= 0 || bytes > MAX_ENTRY) throw new IOException("资源包文件大小异常");
                 if (!name.matches("[a-z0-9-]{1,60}\\.(zip|gba|md|sfc)") || !sha.matches("[0-9a-f]{64}")) throw new IOException("资源包清单包含无效条目");
+                if (!seen.add(name)) throw new IOException("资源包清单包含重复文件：" + name);
                 if (path.length() == 0 || path.startsWith("/") || path.indexOf('\\') >= 0 || path.indexOf(':') >= 0 || path.contains("..") || !path.endsWith(name)) throw new IOException("资源包包含不安全路径");
                 ZipEntry source = zip.getEntry("game-pack/" + path);
                 if (source == null || source.isDirectory() || source.getSize() != bytes) throw new IOException("资源包文件不完整：" + name);
@@ -323,7 +324,10 @@ public final class ResourcePack {
                     existing = 0;
                 }
                 long declared = length(connection);
-                if (declared > 0 && existing + declared > expected) throw new IOException("资源包过大");
+                if (declared > 0 && existing + declared > expected) {
+                    if (append) target.delete();
+                    throw new IOException(append ? "下载进度已失效，请重试" : "资源包过大");
+                }
                 InputStream in = connection.getInputStream();
                 FileOutputStream out = new FileOutputStream(target, append);
                 try {

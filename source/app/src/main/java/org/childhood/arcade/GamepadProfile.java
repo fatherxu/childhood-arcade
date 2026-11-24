@@ -157,6 +157,7 @@ public final class GamepadProfile {
 
     private final Context context;
     private final SharedPreferences prefs;
+    private final SharedPreferences calibrated;
     private final Map<String,Profile> cache=new HashMap<String,Profile>();
     private final Map<String,List<LibEntry>> byId=new HashMap<String,List<LibEntry>>();
     private final List<LibEntry> byName=new ArrayList<LibEntry>();
@@ -165,6 +166,7 @@ public final class GamepadProfile {
     public GamepadProfile(Context context){
         this.context=context.getApplicationContext();
         prefs=this.context.getSharedPreferences("gamepad-profiles",0);
+        calibrated=this.context.getSharedPreferences("gamepad-calibration",0);
     }
 
     public static boolean validLayout(String layout){return Arrays.asList(LAYOUTS).contains(layout);}
@@ -257,6 +259,7 @@ public final class GamepadProfile {
         JSONObject out=new JSONObject();
         try{
             out.put("schema",1);
+            out.put("custom",true);
             out.put("layout",profile.layout);
             out.put("deadzone",Math.round(profile.deadzone*100)/100.0);
             out.put("source",profile.matched);
@@ -319,6 +322,7 @@ public final class GamepadProfile {
     public synchronized boolean reset(String key){
         boolean had=prefs.contains(key);
         prefs.edit().remove(key).apply();
+        calibrated.edit().remove(key).apply();
         cache.remove(key);
         return had;
     }
@@ -329,6 +333,7 @@ public final class GamepadProfile {
         JSONObject out=new JSONObject();
         try{
             out.put("schema",1);
+            out.put("custom",true);
             out.put("layout",source.layout);
             out.put("deadzone",Math.round(source.deadzone*100)/100.0);
             out.put("source",source.matched);
@@ -343,19 +348,34 @@ public final class GamepadProfile {
         String value=out.toString();
         Set<String> keys=new HashSet<String>(prefs.getAll().keySet());
         if(deviceKeys!=null)keys.addAll(deviceKeys);
-        for(String key:keys)if(!key.equals(sourceKey))prefs.edit().putString(key,value).apply();
+        SharedPreferences.Editor marks=calibrated.edit();
+        for(String key:keys)if(!key.equals(sourceKey)){prefs.edit().putString(key,value).apply();marks.putBoolean(key,true);}
+        marks.putBoolean(sourceKey,true);
+        marks.apply();
         cache.clear();
         save(source);
         return true;
     }
 
-    public synchronized void saveDeadzone(String key,float value){
-        Profile profile=cache.get(key);
-        if(profile==null)return;
+    public synchronized boolean saveDeadzone(String key,float value){
+        Profile profile=cached(key);
+        if(profile==null)return false;
         float next=clamp(value,.2f,.8f);
-        if(Math.abs(next-profile.deadzone)<.01f)return;
+        if(Math.abs(next-profile.deadzone)<.01f)return true;
         profile.deadzone=next;
         save(profile);
+        return true;
+    }
+
+    /** 保存摇杆校准结果，并记为手动校准，自动死区测量不再覆盖该手柄。 */
+    public synchronized boolean saveCalibratedDeadzone(String key,float value){
+        if(!saveDeadzone(key,value))return false;
+        calibrated.edit().putBoolean(key,true).apply();
+        return true;
+    }
+
+    public boolean hasCalibration(String key){
+        return key!=null&&calibrated.getBoolean(key,false);
     }
 
     // ------------------------------------------------------------------ library
