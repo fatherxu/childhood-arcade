@@ -1,0 +1,414 @@
+package org.childhood.arcade;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
+import org.json.JSONObject;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.security.MessageDigest;
+import java.util.Locale;
+
+/** Update manifest check, HTTPS download, SHA-256/signature verification and system installer handoff. */
+public final class AppUpdates {
+    static final String MANIFEST_URL = "https://github.com/fatherxu/childhood-arcade/releases/latest/download/update.json";
+    static final String PREFS = "updates";
+    static final String KEY_EXPECTED = "expected_version_code";
+    static final String KEY_LAST_CHECK = "last_check_ms";
+    private static final long MAX_APK = 200L * 1024 * 1024;
+    private static final long MAX_MANIFEST = 64 * 1024;
+    private static final int MAX_REDIRECTS = 4;
+    private static final int CONNECT_TIMEOUT = 15000;
+    private static final int READ_TIMEOUT = 30000;
+
+    private final Context context;
+    private final SharedPreferences prefs;
+    private final Object lock = new Object();
+    private volatile String phase = "idle";
+    private volatile String error;
+    private volatile JSONObject manifest;
+    private volatile int progress;
+    private volatile long downloaded;
+    private volatile long total;
+    private volatile File apkFile;
+    private volatile Thread worker;
+    private volatile boolean cancel;
+
+    AppUpdates(Context context) {
+        this.context = context.getApplicationContext();
+        this.prefs = this.context.getSharedPreferences(PREFS, 0);
+        cleanCache();
+    }
+
+    int installedVersionCode() {
+        try {
+            return context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionCode;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    String installedVersionName() {
+        try {
+            String name = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName;
+            return name == null ? "" : name;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    synchronized void check() {
+        if ("checking".equals(phase) || "downloading".equals(phase)) return;
+        cancel = false;
+        error = null;
+        manifest = null;
+        apkFile = null;
+        progress = 0;
+        downloaded = 0;
+        total = 0;
+        phase = "checking";
+        start(new Runnable() {
+            public void run() { doCheck(); }
+        });
+    }
+
+    synchronized void download() {
+        final JSONObject current = manifest;
+        if (current == null) {
+            phase = "error";
+            error = "请先检查更新";
+            return;
+        }
+        if ("downloading".equals(phase)) return;
+        cancel = false;
+        error = null;
+        progress = 0;
+        downloaded = 0;
+        total = current.optJSONObject("apk") == null ? 0 : current.optJSONObject("apk").optLong("size", 0);
+        phase = "downloading";
+        start(new Runnable() {
+            public void run() { doDownload(current); }
+        });
+    }
+
+    void cancel() {
+        cancel = true;
+        Thread current = worker;
+        if (current != null) current.interrupt();
+    }
+
+    private void start(Runnable task) {
+        Thread thread = new Thread(task, "arcade-update");
+        thread.setDaemon(true);
+        worker = thread;
+        thread.start();
+    }
+
+    private void doCheck() {
+        try {
+            JSONObject json = new JSONObject(new String(fetch(MANIFEST_URL, MAX_MANIFEST), "UTF-8"));
+            validate(json);
+            prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply();
+            if (json.optInt("versionCode", 0) <= installedVersionCode()) {
+                manifest = null;
+                phase = "current";
+            } else {
+                manifest = json;
+                phase = "available";
+            }
+        } catch (Throwable e) {
+            fail(e);
+        }
+    }
+
+    private void doDownload(JSONObject json) {
+        File temp = null;
+        try {
+            JSONObject apk = json.optJSONObject("apk");
+            File dir = new File(context.getCacheDir(), "update");
+            if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("无法创建更新缓存目录");
+            File target = new File(dir, "arcade-" + json.optInt("versionCode", 0) + ".apk");
+            temp = new File(dir, "arcade.apk.part");
+            if (temp.exists() && !temp.delete()) throw new IOException("无法清理旧的下载文件");
+            downloadAll(apk.optString("url", ""), temp, apk.optLong("size", 0));
+            if (cancel) throw new IOException("已取消更新");
+            verifyPackage(temp, json);
+            if (!temp.renameTo(target)) {
+                if (target.exists()) target.delete();
+                if (!temp.renameTo(target)) throw new IOException("无法保存更新包");
+            }
+            apkFile = target;
+            temp = null;
+            downloaded = target.length();
+            total = target.length();
+            progress = 100;
+            prefs.edit().putString(UpdateProvider.KEY_PATH, target.getAbsolutePath()).apply();
+            phase = "ready";
+        } catch (Throwable e) {
+            if (temp != null) temp.delete();
+            if (cancel) {
+                phase = "cancelled";
+            } else {
+                fail(e);
+            }
+        }
+    }
+
+    private void validate(JSONObject json) throws IOException {
+        int versionCode = json.optInt("versionCode", -1);
+        String versionName = json.optString("versionName", "");
+        JSONObject apk = json.optJSONObject("apk");
+        if (versionCode <= 0 || versionName.length() == 0 || apk == null) throw new IOException("更新清单格式不正确");
+        int minSdk = json.optInt("minSdk", 0);
+        if (minSdk > 0 && Build.VERSION.SDK_INT < minSdk) throw new IOException("新版本需要 Android " + minSdk + " 及以上");
+        String url = apk.optString("url", "");
+        if (!url.startsWith("https://")) throw new IOException("更新地址必须使用 HTTPS");
+        long size = apk.optLong("size", -1);
+        if (size <= 0 || size > MAX_APK) throw new IOException("更新包大小异常");
+        if (!apk.optString("sha256", "").toLowerCase(Locale.US).matches("[0-9a-f]{64}")) throw new IOException("更新包校验值异常");
+    }
+
+    private void verifyPackage(File file, JSONObject json) throws Exception {
+        if (cancel) throw new IOException("已取消更新");
+        JSONObject apk = json.optJSONObject("apk");
+        long expectedSize = apk.optLong("size", -1);
+        if (file.length() != expectedSize) throw new IOException("更新包大小不符");
+        String expectedHash = apk.optString("sha256", "").toLowerCase(Locale.US);
+        if (!sha256(file).equals(expectedHash)) throw new IOException("更新包校验失败");
+        PackageManager pm = context.getPackageManager();
+        PackageInfo archive = pm.getPackageArchiveInfo(file.getAbsolutePath(), PackageManager.GET_SIGNATURES);
+        if (archive == null || archive.applicationInfo == null) throw new IOException("更新包无法识别");
+        if (!context.getPackageName().equals(archive.applicationInfo.packageName)) throw new IOException("更新包不属于本应用");
+        if (archive.versionCode != json.optInt("versionCode", 0)) throw new IOException("更新包版本不符");
+        PackageInfo self = pm.getPackageInfo(context.getPackageName(), PackageManager.GET_SIGNATURES);
+        if (archive.signatures == null || self.signatures == null || archive.signatures.length != self.signatures.length) throw new IOException("更新包签名不符");
+        for (int i = 0; i < archive.signatures.length; i++) {
+            if (!archive.signatures[i].toCharsString().equals(self.signatures[i].toCharsString())) throw new IOException("更新包签名不符");
+        }
+    }
+
+    void install(final Activity activity) {
+        final File file = apkFile;
+        if (file == null || !file.isFile()) {
+            phase = "error";
+            error = "没有可安装的更新包，请重新下载";
+            return;
+        }
+        phase = "installing";
+        error = null;
+        activity.runOnUiThread(new Runnable() {
+            public void run() {
+                try {
+                    if (Build.VERSION.SDK_INT >= 26 && !activity.getPackageManager().canRequestPackageInstalls()) {
+                        phase = "permission";
+                        Intent permission = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + activity.getPackageName()));
+                        activity.startActivity(permission);
+                        return;
+                    }
+                    if (manifest != null && manifest.optInt("versionCode", 0) > 0) {
+                        prefs.edit().putInt(KEY_EXPECTED, manifest.optInt("versionCode", 0)).apply();
+                    }
+                    Intent intent = new Intent(Intent.ACTION_VIEW);
+                    intent.setDataAndType(Uri.parse("content://" + UpdateProvider.AUTHORITY + "/update.apk"), "application/vnd.android.package-archive");
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                    activity.startActivity(intent);
+                    phase = "installing";
+                } catch (Exception e) {
+                    phase = "error";
+                    error = "无法打开系统安装器，请检查是否允许安装未知应用";
+                }
+            }
+        });
+    }
+
+    /** One-shot result: the installed version reached the expected code, so the update succeeded. */
+    JSONObject launchResult() {
+        JSONObject out = new JSONObject();
+        int expected = prefs.getInt(KEY_EXPECTED, 0);
+        if (expected <= 0) return out;
+        try {
+            int now = installedVersionCode();
+            if (now >= expected) {
+                out.put("updated", true);
+                out.put("versionCode", now);
+                out.put("versionName", installedVersionName());
+            }
+        } catch (Exception ignored) {
+        }
+        prefs.edit().remove(KEY_EXPECTED).remove(UpdateProvider.KEY_PATH).apply();
+        return out;
+    }
+
+    String status() {
+        JSONObject out = new JSONObject();
+        try {
+            out.put("state", phase);
+            out.put("progress", progress);
+            out.put("downloaded", downloaded);
+            out.put("total", total);
+            out.put("currentVersionCode", installedVersionCode());
+            out.put("currentVersionName", installedVersionName());
+            out.put("lastCheck", prefs.getLong(KEY_LAST_CHECK, 0));
+            out.put("error", error == null ? JSONObject.NULL : error);
+            JSONObject current = manifest;
+            if (current != null) {
+                out.put("versionCode", current.optInt("versionCode", 0));
+                out.put("versionName", current.optString("versionName", ""));
+                out.put("changelog", current.optString("changelog", ""));
+                JSONObject apk = current.optJSONObject("apk");
+                if (apk != null) out.put("size", apk.optLong("size", 0));
+            }
+        } catch (Exception ignored) {
+        }
+        return out.toString();
+    }
+
+    private void fail(Throwable e) {
+        phase = "error";
+        String text = e == null ? "" : e.getMessage();
+        if (text == null || text.length() == 0) text = e == null ? "更新失败" : e.getClass().getSimpleName();
+        error = text;
+    }
+
+    private byte[] fetch(String address, long limit) throws IOException {
+        String current = address;
+        for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+            URL url = new URL(current);
+            if (!"https".equalsIgnoreCase(url.getProtocol())) throw new IOException("只允许 HTTPS 更新地址");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setInstanceFollowRedirects(false);
+            connection.setConnectTimeout(CONNECT_TIMEOUT);
+            connection.setReadTimeout(READ_TIMEOUT);
+            connection.setRequestProperty("Accept", "application/json, application/octet-stream, */*");
+            connection.setRequestProperty("User-Agent", "childhood-arcade-updater");
+            try {
+                int code = connection.getResponseCode();
+                if (code >= 300 && code < 400) {
+                    String location = connection.getHeaderField("Location");
+                    if (location == null || location.length() == 0) throw new IOException("更新地址跳转缺少目标");
+                    current = new URL(url, location).toString();
+                    continue;
+                }
+                if (code != 200) throw new IOException("更新服务器返回 " + code);
+                long declared = contentLength(connection);
+                if (declared > limit) throw new IOException("更新数据过大");
+                return readLimited(connection.getInputStream(), limit);
+            } finally {
+                connection.disconnect();
+            }
+        }
+        throw new IOException("更新地址跳转次数过多");
+    }
+
+    private void downloadAll(String address, File target, long expected) throws IOException {
+        String current = address;
+        for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+            URL url = new URL(current);
+            if (!"https".equalsIgnoreCase(url.getProtocol())) throw new IOException("只允许 HTTPS 下载地址");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setInstanceFollowRedirects(false);
+            connection.setConnectTimeout(CONNECT_TIMEOUT);
+            connection.setReadTimeout(READ_TIMEOUT);
+            connection.setRequestProperty("Accept", "application/octet-stream, */*");
+            connection.setRequestProperty("User-Agent", "childhood-arcade-updater");
+            try {
+                int code = connection.getResponseCode();
+                if (code >= 300 && code < 400) {
+                    String location = connection.getHeaderField("Location");
+                    if (location == null || location.length() == 0) throw new IOException("下载地址跳转缺少目标");
+                    current = new URL(url, location).toString();
+                    continue;
+                }
+                if (code != 200) throw new IOException("下载服务器返回 " + code);
+                long declared = contentLength(connection);
+                if (declared > MAX_APK) throw new IOException("更新包过大");
+                InputStream in = connection.getInputStream();
+                FileOutputStream out = new FileOutputStream(target);
+                try {
+                    byte[] buffer = new byte[262144];
+                    long written = 0;
+                    int count;
+                    while ((count = in.read(buffer)) != -1) {
+                        if (cancel) throw new IOException("已取消更新");
+                        written += count;
+                        if (written > expected || written > MAX_APK) throw new IOException("更新包大小超出预期");
+                        out.write(buffer, 0, count);
+                        downloaded = written;
+                        if (expected > 0) progress = (int) Math.min(99, written * 100 / expected);
+                    }
+                    out.getFD().sync();
+                } finally {
+                    try { out.close(); } catch (IOException ignored) {}
+                    try { in.close(); } catch (IOException ignored) {}
+                }
+                return;
+            } finally {
+                connection.disconnect();
+            }
+        }
+        throw new IOException("下载地址跳转次数过多");
+    }
+
+    private long contentLength(HttpURLConnection connection) {
+        String header = connection.getHeaderField("Content-Length");
+        if (header == null) return -1;
+        try {
+            return Long.parseLong(header.trim());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private byte[] readLimited(InputStream in, long limit) throws IOException {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        long totalRead = 0;
+        int count;
+        try {
+            while ((count = in.read(buffer)) != -1) {
+                totalRead += count;
+                if (totalRead > limit) throw new IOException("更新数据过大");
+                out.write(buffer, 0, count);
+            }
+        } finally {
+            try { in.close(); } catch (IOException ignored) {}
+        }
+        return out.toByteArray();
+    }
+
+    private String sha256(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        InputStream in = new java.io.FileInputStream(file);
+        try {
+            byte[] buffer = new byte[262144];
+            int count;
+            while ((count = in.read(buffer)) != -1) digest.update(buffer, 0, count);
+        } finally {
+            try { in.close(); } catch (IOException ignored) {}
+        }
+        StringBuilder text = new StringBuilder();
+        for (byte b : digest.digest()) text.append(String.format("%02x", b & 255));
+        return text.toString();
+    }
+
+    private void cleanCache() {
+        File dir = new File(context.getCacheDir(), "update");
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        long now = System.currentTimeMillis();
+        for (File file : files) {
+            if (now - file.lastModified() > 60L * 60 * 1000) file.delete();
+        }
+    }
+}

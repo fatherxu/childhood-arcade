@@ -83,6 +83,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private final HashMap<String,LanClient> lanClients=new HashMap<String,LanClient>();
     private volatile boolean lanWatchdogOn=false;
     private android.content.SharedPreferences playerPrefs;
+    private AppUpdates updates;
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -93,6 +94,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         File recovery=new File(getFilesDir(),"store.previous");
         if(!storeDir.exists()&&recovery.exists())recovery.renameTo(storeDir);
         storeDir.mkdirs();
+        updates=new AppUpdates(this);
         WebView.setWebContentsDebuggingEnabled(false);
         getSharedPreferences("deployment",0).edit().putBoolean("page_loaded",false).remove("health").remove("health_at").apply();
         web=new WebView(this);
@@ -1136,6 +1138,13 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public void nativeNesResume(){nativeNes.resume();}
         @JavascriptInterface public void cancelImportFolder(){importCancel=true;}
         @JavascriptInterface public String appVersion(){try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception e){return "1.0.0";}}
+        @JavascriptInterface public int appVersionCode(){return updates.installedVersionCode();}
+        @JavascriptInterface public String checkUpdate(){updates.check();return updates.status();}
+        @JavascriptInterface public void startUpdateDownload(){updates.download();}
+        @JavascriptInterface public String updateStatus(){return updates.status();}
+        @JavascriptInterface public void installUpdate(){updates.install(MainActivity.this);}
+        @JavascriptInterface public void cancelUpdate(){updates.cancel();}
+        @JavascriptInterface public String updateLaunchResult(){return updates.launchResult().toString();}
         @JavascriptInterface public long freeBytes(){try{return new StatFs(getFilesDir().getAbsolutePath()).getAvailableBytes();}catch(Throwable e){return 0;}}
         @JavascriptInterface public void nativeNesClose(){nativeNes.close();}
         @JavascriptInterface public void nativeNesButton(int player,int button,boolean down){nativeNes.button(player,button,down);}
