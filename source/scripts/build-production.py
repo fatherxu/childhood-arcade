@@ -34,7 +34,9 @@ run([jdk/'bin/javac','-encoding','UTF-8','-source','8','-target','8','-bootclass
 shutil.copy2(out/'base.apk',out/'unsigned.apk')
 with zipfile.ZipFile(out/'unsigned.apk','a',zipfile.ZIP_DEFLATED) as z:
  z.write(out/'dex/classes.dex','classes.dex')
- for lib in (root/'app/src/main/jniLibs').rglob('*.so'):z.write(lib,'lib/'+lib.relative_to(root/'app/src/main/jniLibs').as_posix())
+ lock=json.loads((root/'native-abi-lock.json').read_text(encoding='utf-8'))['abiLibraries']
+ for abi in sorted(lock):
+  for name in sorted(lock[abi]):z.write(root/'app/src/main/jniLibs'/abi/name,'lib/'+abi+'/'+name)
 run([tool('zipalign'),'-f','-p','4',out/'unsigned.apk',out/'aligned.apk']);apk=out/('childhood-arcade-'+apk_version+'.apk');run([jdk/'bin/java','-jar',tools/'lib/apksigner.jar','sign','--ks',sign['keystore'],'--ks-key-alias',sign['alias'],'--ks-pass','env:ARCADE_SIGNING_PASSWORD','--key-pass','env:ARCADE_SIGNING_PASSWORD','--out',apk,out/'aligned.apk']);run([jdk/'bin/java','-jar',tools/'lib/apksigner.jar','verify','--verbose',apk])
 digest=hashlib.sha256(apk.read_bytes()).hexdigest();result={'apk':str(apk),'bytes':apk.stat().st_size,'sha256':digest,'versionCode':version_code,'versionName':version_name}
 if version_code>0:

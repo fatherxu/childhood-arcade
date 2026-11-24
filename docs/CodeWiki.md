@@ -80,12 +80,12 @@
 | 事实 | 当前值 | 事实来源 |
 | --- | --- | --- |
 | APK 版本 | `1.0.1` / `versionCode 21` | [version.json](../source/version.json) |
-| APK 大小 | 17,284,226 字节（约 16.5 MiB） | [release.json](../skills/childhood-arcade-tv/assets/release.json) |
+| APK 大小 | 17,161,262 字节（约 16.4 MiB） | [release.json](../skills/childhood-arcade-tv/assets/release.json) |
 | 资源包大小 | 392,915,414 字节（约 374.7 MiB） | [release.json](../skills/childhood-arcade-tv/assets/release.json) |
 | 资源包解压后 | 约 495 MiB | 发布记录 / 构建时的资源清单 |
 | 游戏规模 | 179 款游戏、190 个版本 | `release-catalog.json`（Release 构建输入） |
 | 资源白名单 | 52 项（街机 23、GBA 12、MD 8、SFC 9） | [deployment-resources.json](../source/app/src/main/assets/deployment-resources.json) |
-| 部署单元测试 | 28 项，5 个测试文件 | [tests](../skills/childhood-arcade-tv/tests) |
+| 部署单元测试 | 31 项，6 个测试文件 | [tests](../skills/childhood-arcade-tv/tests) |
 | 默认传输协议 | `provider` | [release.json](../skills/childhood-arcade-tv/assets/release.json) |
 
 > 说明：`release-catalog.json` 不在本仓库中，179/190 是发布包的事实；仓库内的 `catalog.js` 是空占位。
@@ -973,7 +973,7 @@ window.Arcade = {
    （`--version-code` / `--version-name` / `--replace-version` 由 version.json 注入）
 6. javac -encoding UTF-8 -source 8 -target 8 -bootclasspath android.jar -cp jna-5.13.0.jar
 7. jar 打包 classes → d8 --min-api 23 --lib android.jar（classes.jar + JNA）
-8. 将 classes.dex 与 jniLibs/**/*.so 注入 APK
+8. 将 classes.dex 与 `native-abi-lock.json` 锁定的 armeabi-v7a / arm64-v8a 原生库注入 APK（jniLibs 下其他 ABI 目录不打包）
 9. zipalign -f -p 4
 10. apksigner sign（`java -jar tools/lib/apksigner.jar`，密码仅经环境变量 ARCADE_SIGNING_PASSWORD）+ verify
 11. 输出 childhood-arcade-<version>.apk 及其字节数、SHA-256，并生成 update.json（应用内更新清单，含 apk 与 resources 两块）
@@ -1517,9 +1517,9 @@ ROM 运行时二次校验（NativeNes 载入前 fileDigest）
 
 ### 15.1 运行环境
 
-- 仅支持 `armeabi-v7a`；仅有 64 位 ABI 的系统无法安装。
+- 支持 `armeabi-v7a` 与 `arm64-v8a`；仅 x86 的设备无法安装。
 - 最低 Android 6.0 / API 23；`targetSdk 28`。
-- APK ≈ 22.7 MB；资源 ZIP ≈ 375 MiB；解压 ≈ 495 MiB；部署脚本会检查空间但峰值因设备而异。
+- APK ≈ 16.4 MB；资源 ZIP ≈ 375 MiB；解压 ≈ 495 MiB；部署脚本会检查空间但峰值因设备而异。
 - 必须能与电视网络互通；普通 VPN 不保证跨地点互连；**不要将 ADB 暴露到公网**。
 
 ### 15.2 仓库完整性
@@ -1571,7 +1571,7 @@ ROM 运行时二次校验（NativeNes 载入前 fileDigest）
 | 即时存档 | 模拟器完整运行状态快照 | `slot:<hash>:<0-3>`，由 `engine` 字段限定内核 |
 | Manifest | 资源包内的文件清单 | `game-pack/manifest.json` |
 | Release catalog | 发布时注入的游戏目录 | `release-catalog.json` → 构建生成 `catalog.js` |
-| ABI | CPU 指令集 | 仅 `armeabi-v7a`（32 位 ARM） |
+| ABI | CPU 指令集 | `armeabi-v7a`（32 位 ARM）与 `arm64-v8a`（64 位 ARM） |
 | 页面健康 | WebView 前端通过 HTTP 报告的就绪状态 | `health_at` 新鲜度 ≤5 秒 |
 
 ### 16.2 数据格式速查
@@ -1670,7 +1670,7 @@ ROM 运行时二次校验（NativeNes 载入前 fileDigest）
 | `backup_failed` | 已有应用无法 `run-as`、页面不可用、备份文件损坏 | 保留旧版本不覆盖；先在游戏厅设置中手动导出备份 |
 | `page_not_visible` | 进程启动但 WebView 未就绪、设备卡顿、前端脚本报错 | 查看 logcat 中 `ArcadeCore`/chromium 日志；确认 `index.html` 与 `catalog.js` 完整 |
 | `installed_unverified` | APK 已安装，但页面健康未确认 | 不要当作安装成功；重跑 `doctor`，检查启动页面与 `health_at` |
-| 启动黑屏/卡顿 | 内核不匹配、ROM 损坏、仅 64 位 ABI、GLES 初始化失败 | 校验 ROM SHA-256；确认设备支持 `armeabi-v7a`；查看 `NativeNes` 日志 |
+| 启动黑屏/卡顿 | 内核不匹配、ROM 损坏、x86 ABI、GLES 初始化失败 | 校验 ROM SHA-256；确认设备为 ARM ABI；查看 `NativeNes` 日志 |
 | 有画面无声音 | `AudioTrack` 初始化失败、音量 0、电视输出通道错误 | 调高游戏厅音量；检查电视音频输出；重启应用 |
 | 手柄按键无效 | WebView 未聚焦、按键未映射、游戏不支持该键 | 点击画面聚焦；对照 16.5；确认手柄模式与游戏支持 |
 | 存档无法恢复 | `engine`/`hash`/`state.format` 不匹配、文件被修改 | 使用同一内核与游戏版本；跨内核即时存档不保证兼容 |
@@ -1778,7 +1778,7 @@ ROM 运行时二次校验（NativeNes 载入前 fileDigest）
 | APK 升级 | 同包名、同签名、`versionCode` 递增 | 签名冲突时停止，不自动卸载 |
 | 资源包升级 | 文件名与 SHA-256 匹配新清单 | 已存在不同内容时拒绝覆盖 |
 | 签名密钥 | 与已安装版本一致 | 轮换需先卸载（会丢存档），或继续使用旧密钥 |
-| ABI | `armeabi-v7a` | 仅 64 位设备无法加载原生内核 |
+| ABI | `armeabi-v7a` / `arm64-v8a` | x86 设备无法加载原生内核 |
 
 推荐迁移步骤：先在旧版本导出备份 → 安装新版本 → 在设置中恢复备份。不要用“卸载再安装”处理签名冲突，除非确认可以放弃电视端存档。
 
@@ -1787,7 +1787,7 @@ ROM 运行时二次校验（NativeNes 载入前 fileDigest）
 - Python：3.9+，只使用标准库，不新增 `pip` 依赖；异常统一收敛为 `DeploymentError`。
 - Java：`-source 8 -target 8`、`minSdk 23`；不使用 Gradle，构建入口是 [build-production.py](../source/scripts/build-production.py)。
 - 前端：ES5 语法、无构建步骤；不引入运行时 CDN；新增动作同时更新 `action()` 与 `uiKey()`。
-- 原生库：仅 `armeabi-v7a`；新增内核需记录来源、许可证与哈希。
+- 原生库：`armeabi-v7a` / `arm64-v8a`，打包时按 `native-abi-lock.json` 过滤；新增内核需记录来源、许可证与哈希。
 - 测试门槛：
   - `python3 -m unittest discover -s tests -v` 全绿。
   - 至少验证一条“安装 → 启动 → 存档 → 备份 → 恢复”链路。

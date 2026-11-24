@@ -5,8 +5,8 @@
   "transport": "provider",
   "apk": {
     "filename": "childhood-arcade-1.0.1.apk",
-    "sha256": "c5a5ce5bcfc41a871bd051ad6caa2d5b1cf4c868f153c7cb812a2e025faddf32",
-    "bytes": 17304842
+    "sha256": "c67102354ee5e81c74434c0eba04eab7ec0561c1ec7b6e8c0185a59d408bccb4",
+    "bytes": 17161262
   },
   "game_pack": {
     "tag": "v1.0.0",

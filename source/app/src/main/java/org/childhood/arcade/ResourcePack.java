@@ -212,6 +212,7 @@ public final class ResourcePack {
                 if (bytes > largest) largest = bytes;
             }
             if (expected > MAX_EXTRACT) throw new IOException("资源包解压总量超过限制");
+            cleanTemp();
             long free = freeSpace();
             if (free < needed + largest + MIN_FREE) throw new IOException("电视剩余空间不足，解压还需要约 " + megabytes(needed + largest + MIN_FREE - free) + " MB，请清理后重试");
             files = list.length();
@@ -382,6 +383,18 @@ public final class ResourcePack {
             try { in.close(); } catch (IOException ignored) {}
         }
         return out.toByteArray();
+    }
+
+    /** Remove temp files left behind by an interrupted install before checking free space. */
+    private void cleanTemp() {
+        for (String folder : new String[]{"arcade", "gba", "md", "sfc"}) {
+            File[] files = new File(context.getFilesDir(), folder + "/roms").listFiles();
+            if (files == null) continue;
+            for (File file : files) {
+                String name = file.getName();
+                if (name.startsWith(".resource-") && name.endsWith(".part")) file.delete();
+            }
+        }
     }
 
     private File target(String name) {
