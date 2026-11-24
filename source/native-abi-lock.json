@@ -1,0 +1,28 @@
+{
+  "abiLibraries": {
+    "armeabi-v7a": {
+      "libarcade.so": "749e6f6079e03cb26736e7270f2badbcfd9e39d4dfaaa1311a010feeb9a33990",
+      "libfceumm.so": "81ebd3e72d961d082c876a3a0136f190cd50684231533e397c6fcf2665f4a9d2",
+      "libgenplusgx.so": "2db71c37d12a52697c1e7580ddb09defcbbebe863a2f8145ec20d6c45b4f0d2d",
+      "libjnidispatch.so": "e262e528436960b51259a62d2a44deb914d00804b25a0a295c089b739ffe8445",
+      "libmgba.so": "a976a807a7bd79a7dabbc42cfc02620fca17ec7011e887730e9d768689a4d651",
+      "libnestopia.so": "7ec329b1ccb20c82c5419eb76411ec1a7871105510e76a4284c9b7de72639ab9",
+      "libpicodrive.so": "c1cc15edda64c4a98696cd678117f989029db93ed57a53a583791524c6041cf8",
+      "libsnes9x.so": "9de9b3537a32325fd58514d52a37731aae3ce4002286f909dab8292621c9abc2",
+      "libsnes9x2005.so": "7e15337d8caa894861b233fbdec39bd3ddb1a6037fe46966e854eb35c6bba47a",
+      "libsnes9x2005plus.so": "ada4dbf17de5b04c74ea071052ea11ec6999bee94fd9d669b864f4921fab0b13"
+    },
+    "arm64-v8a": {
+      "libarcade.so": "657036bd812a9179fd6b7af8759303fcca0f023f32b9b7fccc8419b46f967962",
+      "libfceumm.so": "17d13e67597983d09fe5fca42491cdbde74557c22ea9d90437c2f3ca64e439b0",
+      "libgenplusgx.so": "bd736fe8b91a55b40cb577f04e9d787aeff9c40cec557c28f9e8c879b7e51676",
+      "libjnidispatch.so": "95fd6129757ceae73472b014c0c7e23a27a193adc4c355693706998aa4757be8",
+      "libmgba.so": "b5a6ed40ede735ea7f1d56916f4ceed8c2aabe4d481fe3383ae2b5e5485b6545",
+      "libnestopia.so": "8ba3ed58b3792705ecf9a60554604c33feda276455856ec143f5b76a777d3471",
+      "libpicodrive.so": "92d28b94fd9381a9dea670e57d58a0f3252a99d0ffde8d310add41f81f90a4fd",
+      "libsnes9x.so": "dfd51707769000b08551e61eee4fe1a68d9e6188d62bf849c762339fa6bebcd3",
+      "libsnes9x2005.so": "5ac303f71adcab69d6fe2a85c498fb89a1cc1447c252398e0d5f5a70948f1500",
+      "libsnes9x2005plus.so": "0492439e52a1cbe41906febac6ae84b40209302129ad9bfc9eb7b99e0f965677"
+    }
+  }
+}

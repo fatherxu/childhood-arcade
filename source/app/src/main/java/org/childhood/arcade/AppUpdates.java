@@ -19,8 +19,19 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.security.KeyStore;
 import java.security.MessageDigest;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.util.Arrays;
 import java.util.Locale;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 
 /** Update manifest check, HTTPS download, SHA-256/signature verification and system installer handoff. */
 public final class AppUpdates {
@@ -34,6 +45,8 @@ public final class AppUpdates {
     private static final int MAX_REDIRECTS = 4;
     private static final int CONNECT_TIMEOUT = 15000;
     private static final int READ_TIMEOUT = 30000;
+
+    private static volatile SSLSocketFactory tlsFactory;
 
     private final Context context;
     private final SharedPreferences prefs;
@@ -309,12 +322,76 @@ public final class AppUpdates {
         error = text;
     }
 
+    private static X509TrustManager trustManager(TrustManagerFactory factory) throws IOException {
+        for (TrustManager manager : factory.getTrustManagers()) {
+            if (manager instanceof X509TrustManager) return (X509TrustManager) manager;
+        }
+        throw new IOException("系统证书验证不可用");
+    }
+
+    /** Android 7.0 及更早版本不内置 ISRG Root X1，补充根证书后仍按系统规则校验证书链。 */
+    private SSLSocketFactory tls() {
+        SSLSocketFactory cached = tlsFactory;
+        if (cached != null) return cached;
+        synchronized (AppUpdates.class) {
+            if (tlsFactory != null) return tlsFactory;
+            try {
+                TrustManagerFactory system = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                system.init((KeyStore) null);
+                KeyStore extra = KeyStore.getInstance(KeyStore.getDefaultType());
+                extra.load(null, null);
+                InputStream in = context.getAssets().open("isrg-root-x1.pem");
+                try {
+                    extra.setCertificateEntry("isrg-root-x1", CertificateFactory.getInstance("X.509").generateCertificate(in));
+                } finally {
+                    in.close();
+                }
+                TrustManagerFactory supplemental = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                supplemental.init(extra);
+                final X509TrustManager primary = trustManager(system), fallback = trustManager(supplemental);
+                X509TrustManager combined = new X509TrustManager() {
+                    public X509Certificate[] getAcceptedIssuers() {
+                        X509Certificate[] first = primary.getAcceptedIssuers(), second = fallback.getAcceptedIssuers();
+                        X509Certificate[] all = Arrays.copyOf(first, first.length + second.length);
+                        System.arraycopy(second, 0, all, first.length, second.length);
+                        return all;
+                    }
+                    public void checkClientTrusted(X509Certificate[] chain, String type) throws CertificateException {
+                        primary.checkClientTrusted(chain, type);
+                    }
+                    public void checkServerTrusted(X509Certificate[] chain, String type) throws CertificateException {
+                        try {
+                            primary.checkServerTrusted(chain, type);
+                        } catch (CertificateException e) {
+                            fallback.checkServerTrusted(chain, type);
+                        }
+                    }
+                };
+                SSLContext ssl = SSLContext.getInstance("TLS");
+                ssl.init(null, new TrustManager[]{combined}, null);
+                tlsFactory = ssl.getSocketFactory();
+            } catch (Throwable e) {
+                tlsFactory = null;
+            }
+            return tlsFactory;
+        }
+    }
+
+    private HttpURLConnection open(URL url) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        if ("https".equalsIgnoreCase(url.getProtocol())) {
+            SSLSocketFactory factory = tls();
+            if (factory != null) ((HttpsURLConnection) connection).setSSLSocketFactory(factory);
+        }
+        return connection;
+    }
+
     private byte[] fetch(String address, long limit) throws IOException {
         String current = address;
         for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
             URL url = new URL(current);
             if (!"https".equalsIgnoreCase(url.getProtocol())) throw new IOException("只允许 HTTPS 更新地址");
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            HttpURLConnection connection = open(url);
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(CONNECT_TIMEOUT);
             connection.setReadTimeout(READ_TIMEOUT);
@@ -349,7 +426,7 @@ public final class AppUpdates {
         for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
             URL url = new URL(current);
             if (!"https".equalsIgnoreCase(url.getProtocol())) throw new IOException("只允许 HTTPS 下载地址");
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            HttpURLConnection connection = open(url);
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(CONNECT_TIMEOUT);
             connection.setReadTimeout(READ_TIMEOUT);

@@ -954,6 +954,7 @@ window.Arcade = {
 [build-production.py](../source/scripts/build-production.py) 不依赖 Gradle：
 
 ```text
+0. check-native-abis.py 校验 armeabi-v7a / arm64-v8a 原生库集合、ELF 架构与 SHA-256（native-abi-lock.json）
 1. 复制 assets → build-production/assets
 2. 从副本中删除 arcade/gba/md/sfc 以及 vendor/{fbneo,mgba,picodrive,snes9x}
    （正式 APK 不内置 iframe 播放器，外部平台依赖原生 .so）
@@ -968,6 +969,8 @@ window.Arcade = {
 10. apksigner sign（`java -jar tools/lib/apksigner.jar`，密码仅经环境变量 ARCADE_SIGNING_PASSWORD）+ verify
 11. 输出 childhood-arcade-<version>.apk 及其字节数、SHA-256，并生成 update.json（应用内更新清单）
 ```
+
+应用内更新由 [AppUpdates.java](../source/app/src/main/java/org/childhood/arcade/AppUpdates.java) 负责：仅允许 HTTPS、限制跳转与大小、校验 SHA-256/包名/versionCode/签名。客户端补充 `assets/isrg-root-x1.pem` 并在系统校验证书链失败时回退到该根证书，以兼容未内置 ISRG Root X1 的 Android 7.0 及更早电视。
 
 签名配置 JSON：`{ "keystore": "...", "alias": "...", "password": "..." }`，属于机密，不入库。
 

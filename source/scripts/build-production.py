@@ -1,5 +1,5 @@
 """Build the split-resource Android release; provide explicit SDK/JDK and signing configuration."""
-import argparse,hashlib,json,os,shutil,subprocess,zipfile
+import argparse,hashlib,json,os,shutil,subprocess,sys,zipfile
 from pathlib import Path
 p=argparse.ArgumentParser();p.add_argument('--jdk',required=True);p.add_argument('--tools',required=True);p.add_argument('--android-jar',required=True);p.add_argument('--signing-config',required=True);p.add_argument('--version');p.add_argument('--version-name');p.add_argument('--version-code',type=int,default=0);p.add_argument('--release-tag');p.add_argument('--repo',default='fatherxu/childhood-arcade');p.add_argument('--changelog',default='');a=p.parse_args()
 root=Path(__file__).resolve().parents[1]
@@ -9,7 +9,7 @@ except Exception:pass
 version_name=a.version_name or a.version or pin.get('versionName') or '1.0.0'
 version_code=a.version_code if a.version_code>0 else int(pin.get('versionCode') or 0)
 apk_version=a.version or version_name
-for name in ['release-catalog.json','version.json','app/src/main/assets/index.html','app/src/main/assets/app.js','app/src/main/assets/style.css']:
+for name in ['release-catalog.json','version.json','native-abi-lock.json','app/src/main/assets/index.html','app/src/main/assets/app.js','app/src/main/assets/style.css']:
  if not (root/name).is_file():raise SystemExit('缺少构建所需文件：'+name)
 try:catalog=json.loads((root/'release-catalog.json').read_text(encoding='utf-8'))
 except ValueError as error:raise SystemExit('release-catalog.json 不是有效JSON：'+str(error))
@@ -20,6 +20,7 @@ def tool(name):
   path=tools/candidate
   if path.is_file():return path
  return tools/name
+run([sys.executable,str(root/'scripts/check-native-abis.py')])
 assets=out/'assets';shutil.rmtree(assets,ignore_errors=True);shutil.copytree(root/'app/src/main/assets',assets)
 for rel in ['arcade','gba','md','sfc','vendor/fbneo','vendor/mgba','vendor/picodrive','vendor/snes9x']:shutil.rmtree(assets/rel,ignore_errors=True)
 (assets/'catalog.js').write_text('window.GAME_CATALOG='+json.dumps(catalog,ensure_ascii=False)+';\n')
