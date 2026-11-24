@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.ActivityNotFoundException;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.hardware.input.InputManager;
 import android.net.Uri;
@@ -38,7 +39,9 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -68,12 +71,13 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private final Runnable captureTimeout=new Runnable(){public void run(){if(captureKey!=null){captureKey=null;captureAction=-1;js("Arcade.gamepadCaptureCanceled()");}}};
     private File storeDir;
     private final Object storeLock = new Object();
-    private static final int PICK_FILE=10, EXPORT_FILE=11, PICK_FOLDER=12, MAX_LIBRARY=2000, MAX_SCAN_DEPTH=4;
+    private static final int PICK_FILE=10, EXPORT_FILE=11, PICK_FOLDER=12, PICK_BACKUP=13, MAX_LIBRARY=2000, MAX_SCAN_DEPTH=4;
     private volatile boolean scanning=false;
     private volatile boolean importCancel=false;
     private android.content.SharedPreferences playerPrefs;
     private AppUpdates updates;
     private LanServer lan;
+    private LegacyFiles legacyFiles;
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -85,6 +89,16 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         if(!storeDir.exists()&&recovery.exists())recovery.renameTo(storeDir);
         storeDir.mkdirs();
         updates=new AppUpdates(this);
+        legacyFiles=new LegacyFiles(this,new LegacyFiles.Host(){
+            public void legacyImportFolder(File dir){startLegacyImport(dir);}
+            public void legacyExportBackup(File dir){finishLegacyExport(dir);}
+            public void legacyRestoreBackup(File file){readLegacyBackup(file);}
+            public void legacyCancelled(int mode){
+                if(mode==LegacyFiles.FOLDER)js("Arcade.libraryResult(0,0,'已取消')");
+                else if(mode==LegacyFiles.EXPORT){pendingBackup=null;js("Arcade.backupResult(false)");}
+                else Toast.makeText(MainActivity.this,"没有选择备份文件",Toast.LENGTH_SHORT).show();
+            }
+        });
         WebView.setWebContentsDebuggingEnabled(false);
         getSharedPreferences("deployment",0).edit().putBoolean("page_loaded",false).remove("health").remove("health_at").apply();
         web=new WebView(this);
@@ -349,6 +363,17 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         }
         if(request==PICK_FILE&&chooser!=null){Uri[] uris=null;if(result==RESULT_OK&&data!=null){if(data.getClipData()!=null){int n=data.getClipData().getItemCount();uris=new Uri[n];for(int i=0;i<n;i++)uris[i]=data.getClipData().getItemAt(i).getUri();}else if(data.getData()!=null)uris=new Uri[]{data.getData()};}chooser.onReceiveValue(uris);chooser=null;}
         if(request==EXPORT_FILE){boolean ok=false;if(result==RESULT_OK&&data!=null&&data.getData()!=null&&pendingBackup!=null){try(OutputStream out=getContentResolver().openOutputStream(data.getData())){if(out!=null){out.write(pendingBackup.getBytes("UTF-8"));ok=true;}}catch(Exception ignored){}}pendingBackup=null;js("Arcade.backupResult("+ok+")");}
+        if(request==PICK_BACKUP){
+            Uri uri=result==RESULT_OK&&data!=null?data.getData():null;
+            if(uri!=null){
+                try{byte[] bytes=readAll(getContentResolver().openInputStream(uri),8*1024*1024);restoreBackupText(new String(bytes,"UTF-8"));}
+                catch(Exception e){Toast.makeText(this,message(e),Toast.LENGTH_LONG).show();}
+            }
+        }
+    }
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
+        super.onRequestPermissionsResult(request,permissions,results);
+        if(request==LegacyFiles.PERMISSION)legacyFiles.permissionResult(results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED);
     }
     private File keyFile(File dir,String key)throws IOException {if(key==null||!key.matches("[a-z0-9:_-]{1,160}"))throw new IOException("Invalid key");return new File(dir,key+".json");}
     private byte[] readAll(InputStream in,int max)throws IOException{try{ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1){if(out.size()+n>max)throw new IOException("Data too large");out.write(buf,0,n);}return out.toByteArray();}finally{in.close();}}
@@ -357,8 +382,8 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private static final String[] DOC_COLUMNS={DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_SIZE};
     private static final char[] HEX="0123456789abcdef".toCharArray();
     private static final class PackEntry{String title,players,genre,version,group,aliases,cover;}
-    private static final class Candidate{String docId,name,relative,ext;long size;PackEntry meta;}
-    private static final class Cover{String docId,ext;}
+    private static final class Candidate{String docId,name,relative,ext;long size;PackEntry meta;File source;}
+    private static final class Cover{String docId,ext;File file;}
     private static String extension(String name){int i=name.lastIndexOf('.');return i<0?"":name.substring(i+1).toLowerCase(Locale.ROOT);}
     private static String stem(String name){int i=name.lastIndexOf('.');return i<=0?name:name.substring(0,i);}
     private static String plain(String value){return value.replace('\\','/').toLowerCase(Locale.ROOT);}
@@ -668,6 +693,187 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         synchronized(storeLock){atomicWrite(new File(storeDir,"library.json"),"{\"schema\":1,\"games\":"+records.toString()+"}");}
         return new int[]{added,skipped};
     }
+    private void startLegacyImport(final File dir){
+        if(scanning){js("Arcade.libraryResult(0,0,'正在导入游戏，请稍候')");return;}
+        scanning=true;importCancel=false;
+        new Thread(new Runnable(){public void run(){
+            int added=0,skipped=0;String error=null;
+            try{int[] value=importFolder(dir);added=value[0];skipped=value[1];}
+            catch(SecurityException e){error="没有读取这个文件夹的权限，请重新选择";}
+            catch(Throwable e){error=message(e);}
+            finally{scanning=false;}
+            js("Arcade.libraryResult("+added+","+skipped+","+JSONObject.quote(error==null?"":error)+")");
+        }},"ArcadeLegacyImport").start();
+    }
+    private int[] importFolder(File root)throws Exception{
+        HashMap<String,PackEntry> byName=new HashMap<String,PackEntry>();
+        HashMap<String,PackEntry> byPath=readPack(root,byName);
+        HashMap<String,Cover> covers=readCovers(root);
+        ArrayList<Candidate> found=new ArrayList<Candidate>();
+        scanTree(root,"",0,found,byPath,byName);
+        if(found.isEmpty())throw new IOException("这个文件夹里没有找到可用的游戏文件");
+        JSONArray records=readLibraryRecords();
+        HashSet<String> known=new HashSet<String>(),knownShapes=new HashSet<String>();
+        for(int i=0;i<records.length();i++){
+            JSONObject record=records.optJSONObject(i);
+            if(record==null)continue;
+            if(record.optString("hash","").length()==64)known.add(record.optString("hash"));
+            String src=record.optString("src","");long size=record.optLong("size",-1);
+            if(src.length()>0&&size>=0)knownShapes.add(src+"|"+size);
+        }
+        long need=64L*1024*1024;
+        for(Candidate candidate:found)if(!knownShapes.contains(candidate.relative+"|"+candidate.size))need+=candidate.size;
+        if(need>new StatFs(getFilesDir().getAbsolutePath()).getAvailableBytes())throw new IOException("电视剩余空间不足，需要约"+(need/1024/1024)+"MB，请清理后重试");
+        File staging=new File(getFilesDir(),"library/staging");
+        deleteTree(staging);
+        if(!staging.mkdirs()&&!staging.isDirectory())throw new IOException("无法准备导入目录");
+        int added=0,skipped=0;
+        try{
+            for(int i=0;i<found.size();i++){
+                if(importCancel)throw new IOException("已取消导入");
+                Candidate candidate=found.get(i);
+                String shape=candidate.relative+"|"+candidate.size;
+                if(knownShapes.contains(shape)){skipped++;continue;}
+                File temp=new File(staging,"part-"+i);
+                String hash=copyRom(candidate.source,candidate,temp);
+                if(known.contains(hash)){temp.delete();knownShapes.add(shape);skipped++;continue;}
+                String[] dest=destination(candidate.ext,hash);
+                File folder=new File(getFilesDir(),dest[0]);
+                if(!folder.isDirectory()&&!folder.mkdirs())throw new IOException("无法创建游戏文件夹");
+                File rom=new File(folder,dest[1]);
+                if(rom.exists())rom.delete();
+                if(!temp.renameTo(rom))throw new IOException("写入游戏文件失败，请检查存储空间");
+                String cover=candidate.meta!=null?saveCover(covers,candidate.meta.cover,hash):null;
+                if(cover==null)cover=saveCover(covers,candidate.name,hash);
+                records.put(libraryRecord(candidate,hash,dest[0]+"/"+dest[1],cover));
+                known.add(hash);knownShapes.add(shape);added++;
+            }
+        }finally{deleteTree(staging);}
+        synchronized(storeLock){atomicWrite(new File(storeDir,"library.json"),"{\"schema\":1,\"games\":"+records.toString()+"}");}
+        return new int[]{added,skipped};
+    }
+    private HashMap<String,PackEntry> readPack(File root,HashMap<String,PackEntry> byName)throws Exception{
+        HashMap<String,PackEntry> byPath=new HashMap<String,PackEntry>();
+        File file=new File(root,"pack.json");
+        if(!file.isFile()||file.length()>8L*1024*1024)return byPath;
+        String text=new String(readAll(new FileInputStream(file),8*1024*1024),"UTF-8");
+        if(text.startsWith("\uFEFF"))text=text.substring(1);
+        JSONObject data;
+        try{data=new JSONObject(text);}catch(Exception e){throw new IOException("pack.json 格式不正确");}
+        JSONArray list=data.optJSONArray("games");
+        if(list==null)return byPath;
+        for(int i=0;i<list.length()&&i<5000;i++){
+            JSONObject item=list.optJSONObject(i);
+            if(item==null)continue;
+            String name=clean(item.optString("file",""),200);
+            if(name.length()==0)continue;
+            PackEntry entry=new PackEntry();
+            entry.title=clean(item.optString("title",""),60);entry.players=clean(item.optString("players",""),20);
+            entry.genre=clean(item.optString("genre",""),20);entry.version=clean(item.optString("version",""),30);
+            entry.group=clean(item.optString("group",""),80);entry.aliases=clean(item.optString("aliases",""),200);
+            entry.cover=clean(item.optString("cover",""),200);
+            String path=plain(name);while(path.startsWith("./"))path=path.substring(2);
+            byPath.put(path,entry);
+            int slash=path.lastIndexOf('/');
+            if(slash>=0)byName.put(path.substring(slash+1),entry);
+        }
+        return byPath;
+    }
+    private HashMap<String,Cover> readCovers(File root){
+        HashMap<String,Cover> covers=new HashMap<String,Cover>();
+        File[] files=new File(root,"covers").listFiles();
+        if(files==null)return covers;
+        for(File file:files){
+            if(!file.isFile()||file.length()<1||file.length()>128*1024)continue;
+            String ext=extension(file.getName());
+            if(!"png".equals(ext)&&!"jpg".equals(ext)&&!"jpeg".equals(ext)&&!"webp".equals(ext))continue;
+            Cover cover=new Cover();cover.file=file;cover.ext=ext;
+            covers.put(stem(file.getName()).toLowerCase(Locale.ROOT),cover);
+        }
+        return covers;
+    }
+    private void scanTree(File dir,String prefix,int depth,ArrayList<Candidate> out,HashMap<String,PackEntry> byPath,HashMap<String,PackEntry> byName){
+        if(depth>MAX_SCAN_DEPTH||out.size()>=MAX_LIBRARY)return;
+        File[] children=dir.listFiles();
+        if(children==null)return;
+        for(File child:children){
+            if(out.size()>=MAX_LIBRARY)return;
+            String name=child.getName();
+            if(name.length()==0||name.charAt(0)=='.')continue;
+            if(child.isDirectory()){
+                if(depth<MAX_SCAN_DEPTH&&!"covers".equalsIgnoreCase(name))scanTree(child,prefix+name+"/",depth+1,out,byPath,byName);
+                continue;
+            }
+            if(!child.isFile())continue;
+            String ext=extension(name);long size=child.length(),limit=sizeLimit(ext);
+            if(limit==0||size<1||size>limit)continue;
+            Candidate candidate=new Candidate();
+            candidate.source=child;candidate.name=name;candidate.ext=ext;candidate.size=size;
+            candidate.relative=plain(prefix+name);
+            candidate.meta=byPath.get(candidate.relative);
+            if(candidate.meta==null)candidate.meta=byName.get(name.toLowerCase(Locale.ROOT));
+            out.add(candidate);
+        }
+    }
+    private String saveCover(HashMap<String,Cover> covers,String name,String hash){
+        if(name==null||name.length()==0)return null;
+        int slash=name.lastIndexOf('/');String file=slash>=0?name.substring(slash+1):name;
+        Cover cover=covers.get(stem(file).toLowerCase(Locale.ROOT));
+        if(cover==null||cover.file==null)return null;
+        try{
+            byte[] data=readAll(new FileInputStream(cover.file),128*1024);
+            File dir=new File(getFilesDir(),"library/covers");
+            if(!dir.isDirectory()&&!dir.mkdirs())return null;
+            File temp=new File(dir,hash+".tmp");
+            FileOutputStream out=new FileOutputStream(temp);
+            try{out.write(data);out.getFD().sync();}finally{out.close();}
+            File dest=new File(dir,hash+"."+cover.ext);
+            if(dest.exists())dest.delete();
+            return temp.renameTo(dest)?hash+"."+cover.ext:null;
+        }catch(Exception e){return null;}
+    }
+    private String copyRom(File source,Candidate candidate,File target)throws Exception{
+        MessageDigest digest=MessageDigest.getInstance("SHA-256");
+        InputStream in=new FileInputStream(source);
+        FileOutputStream out=null;long total=0;
+        try{
+            out=new FileOutputStream(target);byte[] buffer=new byte[65536];int n;
+            while((n=in.read(buffer))!=-1){total+=n;if(total>candidate.size)throw new IOException("文件在读取过程中发生变化，请重试");out.write(buffer,0,n);digest.update(buffer,0,n);}
+            out.flush();out.getFD().sync();
+        }finally{try{in.close();}catch(Exception ignored){}if(out!=null)try{out.close();}catch(Exception ignored){}}
+        if(total!=candidate.size){target.delete();throw new IOException("游戏文件读取不完整，请重试");}
+        byte[] bytes=digest.digest();StringBuilder hex=new StringBuilder();
+        for(byte b:bytes)hex.append(HEX[(b>>4)&15]).append(HEX[b&15]);
+        return hex.toString();
+    }
+    private void finishLegacyExport(File dir){
+        boolean ok=false;File file=null;
+        try{
+            if(pendingBackup==null)throw new IOException("没有待导出的备份");
+            String base="童年游戏厅_存档备份_"+new SimpleDateFormat("yyyyMMdd_HHmmss",Locale.US).format(new Date());
+            for(int i=0;i<100;i++){
+                File candidate=new File(dir,base+(i==0?"":"_"+i)+".json");
+                if(candidate.createNewFile()){file=candidate;break;}
+            }
+            if(file==null)throw new IOException("无法创建备份文件");
+            FileOutputStream out=new FileOutputStream(file);
+            try{out.write(pendingBackup.getBytes("UTF-8"));out.getFD().sync();}finally{out.close();}
+            ok=true;
+        }catch(Exception e){if(file!=null)file.delete();}
+        pendingBackup=null;
+        js("Arcade.backupResult("+ok+")");
+        if(!ok)Toast.makeText(this,"备份没有保存，请检查存储权限和空间",Toast.LENGTH_LONG).show();
+    }
+    private void readLegacyBackup(File file){
+        try{
+            if(!file.isFile()||file.length()<1||file.length()>8L*1024*1024)throw new IOException("备份文件过大或无法读取");
+            restoreBackupText(new String(readAll(new FileInputStream(file),8*1024*1024),"UTF-8"));
+        }catch(Exception e){Toast.makeText(this,message(e),Toast.LENGTH_LONG).show();}
+    }
+    private void restoreBackupText(String text){
+        if(text==null||text.length()>8*1024*1024){Toast.makeText(this,"备份文件过大，请通过手机备份/恢复",Toast.LENGTH_LONG).show();return;}
+        js("Arcade.restoreBackupText("+JSONObject.quote(text)+")");
+    }
     private static String message(Throwable e){String text=e.getMessage();return text==null||text.length()==0?e.getClass().getSimpleName():text;}
     private static long treeSize(File file){if(file==null)return 0;if(file.isFile())return file.length();long total=0;File[] children=file.listFiles();if(children!=null)for(File child:children)total+=treeSize(child);return total;}
     public class Bridge {
@@ -777,7 +983,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
             try{startActivityForResult(intent,PICK_FOLDER);}
-            catch(ActivityNotFoundException e){js("Arcade.libraryResult(0,0,'电视没有可用的文件夹选择器，可通过电脑部署游戏文件')");}
+            catch(ActivityNotFoundException e){legacyFiles.startFolder();}
         }});}
         @JavascriptInterface public String readLibraryRom(String hash){
             if(hash==null||!hash.matches("[a-f0-9]{64}"))return null;
@@ -809,6 +1015,12 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             deleteTree(old);if(!storeDir.renameTo(old))throw new IOException("Cannot stage original");moved=true;if(!stage.renameTo(storeDir))throw new IOException("Cannot commit backup");deleteTree(old);return true;
         }catch(Exception e){if(moved&&!storeDir.exists())old.renameTo(storeDir);deleteTree(stage);return false;}}}
         @JavascriptInterface public void finishApp(){runOnUiThread(new Runnable(){public void run(){finish();}});}
-        @JavascriptInterface public void exportBackup(final String json){runOnUiThread(new Runnable(){public void run(){if(json==null||json.length()>50*1024*1024){js("Arcade.backupResult(false)");return;}pendingBackup=json;Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("application/json");intent.putExtra(Intent.EXTRA_TITLE,"童年游戏厅_存档备份.json");try{startActivityForResult(intent,EXPORT_FILE);}catch(ActivityNotFoundException e){pendingBackup=null;js("Arcade.backupResult(false)");Toast.makeText(MainActivity.this,"电视没有文件选择器，可通过电脑备份存档",Toast.LENGTH_LONG).show();}}});}
+        @JavascriptInterface public void pickBackupFile(){runOnUiThread(new Runnable(){public void run(){
+            Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("application/json");
+            try{startActivityForResult(intent,PICK_BACKUP);}
+            catch(ActivityNotFoundException e){legacyFiles.startImport();}
+        }});}
+        @JavascriptInterface public void exportBackup(final String json){runOnUiThread(new Runnable(){public void run(){if(json==null||json.length()>50*1024*1024){js("Arcade.backupResult(false)");return;}pendingBackup=json;Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("application/json");intent.putExtra(Intent.EXTRA_TITLE,"童年游戏厅_存档备份.json");try{startActivityForResult(intent,EXPORT_FILE);}catch(ActivityNotFoundException e){legacyFiles.startExport();}}});}
     }
 }

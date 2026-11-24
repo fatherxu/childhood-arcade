@@ -555,6 +555,9 @@ dispatchGenericMotionEvent(MotionEvent e)
 | `writeBatch(json)` | 批量恢复：≤1000 条；写 `store.stage` → 原目录改名 `store.previous` → stage 提交 → 失败回滚，成功后删除 `store.previous` |
 | `finishApp()` | 主线程 `finish()` |
 | `exportBackup(json)` | 上限 50 MiB；触发 `ACTION_CREATE_DOCUMENT`，标题「童年游戏厅_存档备份.json」 |
+| `pickBackupFile()` | 选择备份 JSON 并交给 `Arcade.restoreBackupText` 恢复 |
+
+[LegacyFiles.java](../source/app/src/main/java/org/childhood/arcade/LegacyFiles.java) 为没有 DocumentsUI 的 Android 9 及更早电视提供目录浏览兜底：导入游戏文件夹、导出备份、选择备份文件。回退路径受 `READ/WRITE_EXTERNAL_STORAGE`（maxSdkVersion 28）保护，恢复文件上限 8 MiB。
 
 存储写入使用 `AtomicFile`；`writeBatch` 是**目录级事务**，保证恢复失败时原存档不变。
 
