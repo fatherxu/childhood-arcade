@@ -42,12 +42,6 @@ digest=hashlib.sha256(apk.read_bytes()).hexdigest();result={'apk':str(apk),'byte
 if version_code>0:
  tag=a.release_tag or ('v'+version_name)
  manifest={'schema':1,'versionCode':version_code,'versionName':version_name,'minSdk':23,'apk':{'url':'https://github.com/'+a.repo+'/releases/download/'+tag+'/'+apk.name,'size':apk.stat().st_size,'sha256':digest},'changelog':a.changelog}
- try:
-  pinned=json.loads((root.parent/'skills/childhood-arcade-tv/assets/release.json').read_text(encoding='utf-8'))
-  pack=pinned.get('game_pack',{})
-  pack_tag=pack.get('tag')
-  if pack_tag and pack.get('filename') and pack.get('sha256') and pack.get('bytes'):
-   manifest['resources']={'version':pack_tag[1:] if pack_tag.startswith('v') else pack_tag,'url':'https://github.com/'+(pinned.get('repository') or a.repo)+'/releases/download/'+pack_tag+'/'+pack['filename'],'size':pack['bytes'],'sha256':pack['sha256']}
- except Exception:pass
+ # 旧独立资源包资产已不再提供，update.json 不再声明 resources；客户端会提示改用游戏包
  update=out/'update.json';update.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8');result['updateJson']=str(update)
 print(json.dumps(result))

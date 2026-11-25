@@ -121,12 +121,18 @@ final class LanServer {
         }
         host.js("Arcade.remoteReset()");
     }
+    private final java.util.concurrent.atomic.AtomicInteger lanActive=new java.util.concurrent.atomic.AtomicInteger();
     private void lanAccept(ServerSocket server){
         while(!server.isClosed()){
             Socket client;
             try{client=server.accept();}catch(IOException e){break;}
+            if(lanActive.incrementAndGet()>12){
+                lanActive.decrementAndGet();
+                try{client.close();}catch(IOException ignored){}
+                continue;
+            }
             final Socket socket=client;
-            Thread worker=new Thread(new Runnable(){public void run(){lanHandle(socket);}},"ArcadeLanRequest");
+            Thread worker=new Thread(new Runnable(){public void run(){try{lanHandle(socket);}finally{lanActive.decrementAndGet();}}},"ArcadeLanRequest");
             worker.setDaemon(true);worker.start();
         }
     }

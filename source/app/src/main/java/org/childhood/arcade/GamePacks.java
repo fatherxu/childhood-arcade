@@ -94,7 +94,7 @@ final class GamePacks {
         prefs = this.context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         packsDir = new File(this.context.getFilesDir(), "packs");
         stagingRoot = new File(packsDir, "staging");
-        cacheRoot = new File(this.context.getCacheDir(), "packs");
+        cacheRoot = new File(packsDir, "cache");
         cleanup();
         loadLocalCatalog();
     }

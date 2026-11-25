@@ -127,7 +127,12 @@ public final class ResourcePack {
         try {
             JSONObject json = new JSONObject(new String(AppUpdates.fetch(context, AppUpdates.MANIFEST_URL, 64 * 1024), "UTF-8"));
             JSONObject res = json.optJSONObject("resources");
-            if (res == null) throw new IOException("更新清单没有游戏资源信息，请先更新应用");
+            if (res == null) {
+                // 旧资源包已不再随发布提供，引导用户使用游戏包
+                phase = "unavailable";
+                error = "独立资源包已停止提供，GBA/MD/SFC 游戏请使用「精选包与扩展包」下载";
+                return;
+            }
             String url = res.optString("url", "");
             if (!url.startsWith("https://")) throw new IOException("资源地址必须使用 HTTPS");
             long size = res.optLong("size", -1);
@@ -403,7 +408,7 @@ public final class ResourcePack {
     }
 
     private File partFile() {
-        return new File(new File(context.getCacheDir(), "resources"), "game-pack.part");
+        return new File(new File(context.getFilesDir(), "resources"), "game-pack.part");
     }
 
     private long freeSpace() {

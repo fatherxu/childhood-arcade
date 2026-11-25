@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 30
     env:
       BUILD_INPUTS_REPO: ${{ vars.BUILD_INPUTS_REPO || github.repository }}
-      BUILD_INPUTS_TAG: ${{ vars.BUILD_INPUTS_TAG || 'build-inputs' }}
+      BUILD_INPUTS_TAG: ${{ vars.BUILD_INPUTS_TAG || 'build-inputs-1.0.0' }}
       BUILD_INPUTS_ASSET: ${{ vars.BUILD_INPUTS_ASSET || 'childhood-arcade-build-inputs.zip' }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -99,9 +99,16 @@ jobs:
         run: |
           NOTES_FILE="release-notes/${GITHUB_REF_NAME}.md"
           if [ -f "$NOTES_FILE" ]; then NOTES="$(cat "$NOTES_FILE")"; else NOTES="$(git log -1 --pretty=%s)"; fi
-          gh release create "$GITHUB_REF_NAME" \
-            "source/build-production/childhood-arcade-$VERSION_NAME.apk" \
-            source/build-production/update.json \
-            --title "童年游戏厅 $VERSION_NAME" \
-            --notes "$NOTES" \
-            --latest
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              "source/build-production/childhood-arcade-$VERSION_NAME.apk" \
+              source/build-production/update.json --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "童年游戏厅 $VERSION_NAME" --notes "$NOTES" --latest
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              "source/build-production/childhood-arcade-$VERSION_NAME.apk" \
+              source/build-production/update.json \
+              --title "童年游戏厅 $VERSION_NAME" \
+              --notes "$NOTES" \
+              --latest
+          fi

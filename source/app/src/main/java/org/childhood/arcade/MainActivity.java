@@ -703,6 +703,9 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         }catch(Exception e){throw new IOException("游戏库记录无法读取，请重试");}
     }
     private int[] importFolder(Uri tree)throws Exception{
+        synchronized(PACK_IMPORT_LOCK){return importFolderUri(tree);}
+    }
+    private int[] importFolderUri(Uri tree)throws Exception{
         String rootId=DocumentsContract.getTreeDocumentId(tree);
         HashMap<String,PackEntry> byName=new HashMap<String,PackEntry>();
         HashMap<String,PackEntry> byPath=readPack(tree,rootId,byName);
@@ -726,6 +729,8 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         deleteTree(staging);
         if(!staging.mkdirs()&&!staging.isDirectory())throw new IOException("无法准备导入目录");
         int added=0,skipped=0;
+        ArrayList<File> written=new ArrayList<File>();
+        ArrayList<String> hashes=new ArrayList<String>();
         try{
             for(int i=0;i<found.size();i++){
                 if(importCancel)throw new IOException("已取消导入");
@@ -741,11 +746,22 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 File rom=new File(folder,dest[1]);
                 if(rom.exists())rom.delete();
                 if(!temp.renameTo(rom))throw new IOException("写入游戏文件失败，请检查存储空间");
+                written.add(rom);
                 String cover=candidate.meta!=null?saveCover(tree,covers,candidate.meta.cover,hash):null;
                 if(cover==null)cover=saveCover(tree,covers,candidate.name,hash);
                 records.put(libraryRecord(candidate,hash,dest[0]+"/"+dest[1],cover));
-                known.add(hash);knownShapes.add(shape);added++;
+                known.add(hash);knownShapes.add(shape);hashes.add(hash);added++;
             }
+        }catch(Throwable failure){
+            // 导入失败或取消时回滚已写入的文件与封面，避免留下无法管理的孤儿文件
+            for(File rom:written)rom.delete();
+            File coverDir=new File(getFilesDir(),"library/covers");
+            for(String hash:hashes){
+                File[] list=coverDir.listFiles();
+                if(list==null)continue;
+                for(File cover:list)if(cover.getName().startsWith(hash+"."))cover.delete();
+            }
+            throw failure;
         }finally{deleteTree(staging);}
         synchronized(storeLock){atomicWrite(new File(storeDir,"library.json"),"{\"schema\":1,\"games\":"+records.toString()+"}");}
         return new int[]{added,skipped};
@@ -762,7 +778,19 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             js("Arcade.libraryResult("+added+","+skipped+","+JSONObject.quote(error==null?"":error)+")");
         }},"ArcadeLegacyImport").start();
     }
-    private int[] importFolder(File root)throws Exception{return importFolder(root,null,null);}
+    private int[] importFolder(File root)throws Exception{
+        synchronized(PACK_IMPORT_LOCK){
+            ArrayList<File> written=new ArrayList<File>();
+            try{return importFolder(root,null,written);}
+            catch(Throwable failure){
+                HashSet<String> bases=new HashSet<String>();
+                for(File rom:written){bases.add(stem(rom.getName()));try{rom.delete();}catch(Throwable ignored){}}
+                File[] covers=new File(getFilesDir(),"library/covers").listFiles();
+                if(covers!=null)for(File cover:covers)if(bases.contains(stem(cover.getName())))try{cover.delete();}catch(Throwable ignored){}
+                throw failure;
+            }
+        }
+    }
     private int[] importFolder(File root,GamePacks.Progress progress,ArrayList<File> written)throws Exception{
         HashMap<String,PackEntry> byName=new HashMap<String,PackEntry>();
         HashMap<String,PackEntry> byPath=readPack(root,byName);

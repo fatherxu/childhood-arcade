@@ -24,7 +24,8 @@ function body(s){
 }
 function buttons(s){
  var name=s?String(s.state||'idle'):'idle',close={text:'关闭',primary:true,fn:function(){stop();ctx.render('update:');}};
- if(!s||name==='idle'||name==='cancelled'||name==='checking')return [close];
+ if(name==='cancelled')return (Number(s&&s.total)>0?[{text:'继续下载',primary:true,fn:function(){download(false);}},close]:[{text:'重新检查',primary:true,fn:check},close]);
+ if(!s||name==='idle'||name==='checking')return [close];
  if(name==='current')return [{text:'重新检查',fn:check},close];
  if(name==='available')return [{text:'下载并安装',primary:true,fn:function(){download(false);}},{text:'稍后',fn:function(){stop();ctx.render('update:');}}];
  if(name==='metered')return [{text:'继续下载',fn:function(){download(true);}},close];

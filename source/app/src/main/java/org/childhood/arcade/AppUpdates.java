@@ -138,6 +138,7 @@ public final class AppUpdates {
 
     void cancel() {
         cancel = true;
+        if ("checking".equals(phase)) phase = "cancelled";
         Thread current = worker;
         if (current != null) current.interrupt();
     }
@@ -153,6 +154,7 @@ public final class AppUpdates {
         try {
             JSONObject json = new JSONObject(new String(fetch(context, MANIFEST_URL, MAX_MANIFEST), "UTF-8"));
             validate(json);
+            if (cancel) return;
             prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply();
             if (json.optInt("versionCode", 0) <= installedVersionCode()) {
                 manifest = null;
