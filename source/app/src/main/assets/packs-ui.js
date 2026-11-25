@@ -51,7 +51,7 @@ function view(){
  var extendedGames=extended.reduce(function(n,p){return n+(Number(p.count)||0);},0);
  var head='<div class="pack-head"><h3>游戏包</h3><p class="notice">精选包按游戏类别打包；扩展包收录全集横版，按平台和类别拆分。每个包下载后会校验并导入游戏库，已存在的游戏自动跳过。</p><div class="pack-tabs">'+tabButton('精选包 '+featured.length,'packs-tier','featured',tier==='featured')+tabButton('扩展包 '+extended.length,'packs-tier','extended',tier==='extended')+ctx.btn('刷新目录','packs-refresh')+'</div>';
  if(tier==='extended')head+='<div class="pack-tabs pack-platforms">'+tabButton('全部','packs-platform','all',platform==='all')+tabButton('FC','packs-platform','FC',platform==='FC')+tabButton('MD','packs-platform','MD',platform==='MD')+tabButton('SFC','packs-platform','SFC',platform==='SFC')+'</div>';
- head+='<p class="pack-summary">精选 '+featuredGames+' 款 · 扩展 '+extendedGames+' 款 · 已导入 '+ctx.esc(s.installedGames||0)+' 款 · 电视剩余 '+ctx.esc(ctx.formatBytes(s.freeBytes||0))+' · 目录 '+(s.catalogVersion?('v'+ctx.esc(s.catalogVersion)):'未加载')+(s.catalogSource==='remote'?'（在线）':s.catalogSource==='bundled'?'（内置）':s.catalogSource==='cache'?'（缓存）':'')+'</p></div>';
+ head+='<p class="pack-summary">精选 '+featuredGames+' 款 · 扩展 '+extendedGames+' 款 · 已导入 '+ctx.esc(s.installedGames||0)+' 款'+(Number(s.freeBytes)>0?' · 电视剩余 '+ctx.esc(ctx.formatBytes(s.freeBytes)):'')+' · 目录 '+(s.catalogVersion?('v'+ctx.esc(s.catalogVersion)):'未加载')+(s.catalogSource==='remote'?'（在线）':s.catalogSource==='bundled'?'（内置）':s.catalogSource==='cache'?'（缓存）':'')+'</p></div>';
  if(s.catalogError)head+='<p class="check-error">'+ctx.esc(s.catalogError)+'</p>';
  if(Number(s.minVersionCode)>Number(s.appVersionCode))head+='<p class="check-error">当前应用版本过低，请先在「软件更新」中升级后再下载游戏包。</p>';
  if(s.error&&!busy(s)&&s.error!==s.catalogError)head+='<p class="check-error">'+ctx.esc(s.error)+'</p>';
@@ -65,7 +65,7 @@ function startPoll(){stop();poll=setInterval(tick,900);}
 function tick(){
  if(!ctx||ctx.state.page!=='packs'){stop();return;}
  var s=status();if(!s)return;
- var key=[s.state,s.packId,s.catalogVersion,s.catalogSource,s.installedPacks,s.installedGames,s.catalogError,s.error,s.minVersionCode].join('|');
+ var key=[s.state,s.packId,s.catalogVersion,s.catalogSource,s.catalogAt,s.installedPacks,s.installedGames,s.catalogError,s.error,s.minVersionCode].join('|');
  if(key!==lastKey){lastKey=key;ctx.render('packs:');return;}
  var pct=Math.max(0,Math.min(100,Number(s.progress)||0));
  var fill=document.getElementById('pack-active-fill'),text=document.getElementById('pack-active-text');

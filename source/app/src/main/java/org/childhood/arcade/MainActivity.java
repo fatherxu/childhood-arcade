@@ -78,6 +78,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private final Runnable captureTimeout=new Runnable(){public void run(){if(captureKey!=null){captureKey=null;captureAction=-1;js("Arcade.gamepadCaptureCanceled()");}}};
     private File storeDir;
     private final Object storeLock = new Object();
+    private static final Object PACK_IMPORT_LOCK = new Object();
     private static final int PICK_FILE=10, EXPORT_FILE=11, PICK_FOLDER=12, PICK_BACKUP=13, MAX_LIBRARY=2000, MAX_SCAN_DEPTH=4;
     private volatile boolean scanning=false;
     private volatile boolean importCancel=false;
@@ -194,7 +195,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)hideSystemUI();}
     @Override protected void onResume(){super.onResume();pageActive=true;}
     @Override protected void onPause(){pageActive=false;if(nativeNes!=null)try{nativeNes.pause();}catch(Throwable ignored){}super.onPause();js("Arcade.lifecyclePause()");}
-    @Override protected void onDestroy(){if(lan!=null)lan.stop();if(nativeNes!=null){try{nativeNes.close();}catch(RuntimeException e){android.util.Log.w("ArcadeCore","退出时游戏线程未能及时停止",e);}}if(inputs!=null)inputs.unregisterInputDeviceListener(this);uiHandler.removeCallbacks(captureTimeout);uiHandler.removeCallbacks(calibFinish);if(web!=null){web.removeJavascriptInterface("NativeArcade");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){if(lan!=null)lan.stop();if(packs!=null)packs.cancel();if(nativeNes!=null){try{nativeNes.close();}catch(RuntimeException e){android.util.Log.w("ArcadeCore","退出时游戏线程未能及时停止",e);}}if(inputs!=null)inputs.unregisterInputDeviceListener(this);uiHandler.removeCallbacks(captureTimeout);uiHandler.removeCallbacks(calibFinish);if(web!=null){web.removeJavascriptInterface("NativeArcade");web.destroy();web=null;}super.onDestroy();}
     private boolean gamepad(KeyEvent event){
         InputDevice device=InputDevice.getDevice(event.getDeviceId());
         int sources=device==null?event.getSource():device.getSources();
@@ -813,6 +814,11 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         return new int[]{added,skipped};
     }
     private int[] importPack(File root,GamePacks.Progress progress)throws Exception{
+        synchronized(PACK_IMPORT_LOCK){
+            return importPackLocked(root,progress);
+        }
+    }
+    private int[] importPackLocked(File root,GamePacks.Progress progress)throws Exception{
         if(scanning)throw new IOException("正在导入其他游戏，请稍候");
         scanning=true;importCancel=false;
         ArrayList<File> written=new ArrayList<File>();

@@ -100,11 +100,19 @@ final class GamePacks {
     }
 
     private void cleanup() {
-        deleteTree(stagingRoot);
+        long cutoff = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000;
+        // 只清理过期的解压目录，避免新实例误删正在导入的文件
+        if (stagingRoot.isDirectory()) {
+            File[] dirs = stagingRoot.listFiles();
+            if (dirs != null) {
+                for (File dir : dirs) {
+                    if (dir.lastModified() < cutoff) deleteTree(dir);
+                }
+            }
+        }
         if (cacheRoot.isDirectory()) {
             File[] files = cacheRoot.listFiles();
             if (files != null) {
-                long cutoff = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000;
                 for (File file : files) {
                     String name = file.getName();
                     if ((name.endsWith(".part") || name.endsWith(".zip")) && file.lastModified() < cutoff) {
@@ -251,6 +259,7 @@ final class GamePacks {
     }
 
     void cancel() {
+        if (!isBusy(phase)) return;
         cancel = true;
         try {
             host.cancelImport();
@@ -258,9 +267,9 @@ final class GamePacks {
         }
         Thread thread = worker;
         if (thread != null) thread.interrupt();
-        if (!isBusy(phase)) {
+        {
             synchronized (lock) {
-                if (!isBusy(phase)) phase = "cancelled";
+                if (isBusy(phase)) phase = "cancelled";
             }
         }
     }
@@ -277,7 +286,7 @@ final class GamePacks {
             long extract = Math.max(size, pack.optLong("extractBytes", 0));
             if (!zip.isFile() || !validZip(zip, size, sha)) {
                 if (zip.isFile()) zip.delete();
-                checkSpace(Math.max(size + extract, 2 * extract) + MIN_FREE);
+                checkSpace(size + 2 * extract + MIN_FREE);
                 phase = "downloading";
                 progress = 0;
                 downloaded = part.isFile() ? part.length() : 0;
