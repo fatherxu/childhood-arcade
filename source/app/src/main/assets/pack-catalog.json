@@ -1,0 +1,1164 @@
+{
+ "schema": 1,
+ "version": "2026.11.25.1",
+ "generatedAt": "2026-11-25T06:05:04Z",
+ "minVersionCode": 22,
+ "baseUrl": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/",
+ "tiers": [
+  {
+   "id": "featured",
+   "name": "精选包",
+   "note": "精选 280 款，按游戏类别打包，适合先装"
+  },
+  {
+   "id": "extended",
+   "name": "扩展包",
+   "note": "全集横版 10579 个版本，按平台和类别拆分，可单独下载"
+  }
+ ],
+ "stats": {
+  "featuredGames": 280,
+  "extendedGames": 10579,
+  "featuredBytes": 251681014,
+  "extendedBytes": 6462004092,
+  "packCount": 59
+ },
+ "packs": [
+  {
+   "id": "featured-action",
+   "tier": "featured",
+   "name": "精选包 · 动作",
+   "platform": "FC/MD/SFC",
+   "platforms": [
+    "FC",
+    "MD",
+    "SFC"
+   ],
+   "genre": "动作",
+   "part": 1,
+   "parts": 1,
+   "count": 135,
+   "size": 106888713,
+   "romBytes": 171352944,
+   "extractBytes": 176084821,
+   "sha256": "6647a864cf2b168559438adb2f8207d7055c12a191bbd3c711723aabec63043d",
+   "asset": "pack-featured-action.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-featured-action.zip"
+  },
+  {
+   "id": "featured-rpg",
+   "tier": "featured",
+   "name": "精选包 · 角色扮演",
+   "platform": "FC/MD/SFC",
+   "platforms": [
+    "FC",
+    "MD",
+    "SFC"
+   ],
+   "genre": "角色扮演",
+   "part": 1,
+   "parts": 1,
+   "count": 56,
+   "size": 74856326,
+   "romBytes": 122290896,
+   "extractBytes": 124517715,
+   "sha256": "18efd35855a5aa1cef5eaf2c1dd64212cd8ddf0c161e07c2d8fa825d7c7250ca",
+   "asset": "pack-featured-rpg.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-featured-rpg.zip"
+  },
+  {
+   "id": "featured-fighting",
+   "tier": "featured",
+   "name": "精选包 · 格斗",
+   "platform": "FC/MD/SFC",
+   "platforms": [
+    "FC",
+    "MD",
+    "SFC"
+   ],
+   "genre": "格斗",
+   "part": 1,
+   "parts": 1,
+   "count": 15,
+   "size": 31081773,
+   "romBytes": 45613072,
+   "extractBytes": 46255718,
+   "sha256": "ebdc6e6bf3ab046b3ac901daa383d3146716a2f7dc240b0b6803d3ec685453c1",
+   "asset": "pack-featured-fighting.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-featured-fighting.zip"
+  },
+  {
+   "id": "featured-shooter",
+   "tier": "featured",
+   "name": "精选包 · 射击",
+   "platform": "FC/MD/SFC",
+   "platforms": [
+    "FC",
+    "MD",
+    "SFC"
+   ],
+   "genre": "射击",
+   "part": 1,
+   "parts": 1,
+   "count": 31,
+   "size": 11092450,
+   "romBytes": 17662704,
+   "extractBytes": 18710124,
+   "sha256": "1696af0f378a4335711974c7fe9849290d1b223fcb7c3c74c9e94785e4c740a7",
+   "asset": "pack-featured-shooter.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-featured-shooter.zip"
+  },
+  {
+   "id": "featured-puzzle",
+   "tier": "featured",
+   "name": "精选包 · 益智",
+   "platform": "FC/MD/SFC",
+   "platforms": [
+    "FC",
+    "MD",
+    "SFC"
+   ],
+   "genre": "益智",
+   "part": 1,
+   "parts": 1,
+   "count": 12,
+   "size": 3558447,
+   "romBytes": 6357056,
+   "extractBytes": 6832041,
+   "sha256": "3d0b87acdc09d339489781e384ae9df578d58df0717eea7d55cd4d48986d8a5c",
+   "asset": "pack-featured-puzzle.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-featured-puzzle.zip"
+  },
+  {
+   "id": "featured-sports",
+   "tier": "featured",
+   "name": "精选包 · 体育",
+   "platform": "FC/MD",
+   "platforms": [
+    "FC",
+    "MD"
+   ],
+   "genre": "体育",
+   "part": 1,
+   "parts": 1,
+   "count": 6,
+   "size": 3330403,
+   "romBytes": 6029376,
+   "extractBytes": 6394234,
+   "sha256": "542f97fcbbb43c53496ae69ff07d55a7e94140bdda5b73425e1db6a57a338ea0",
+   "asset": "pack-featured-sports.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-featured-sports.zip"
+  },
+  {
+   "id": "featured-racing",
+   "tier": "featured",
+   "name": "精选包 · 竞速",
+   "platform": "FC/MD/SFC",
+   "platforms": [
+    "FC",
+    "MD",
+    "SFC"
+   ],
+   "genre": "竞速",
+   "part": 1,
+   "parts": 1,
+   "count": 9,
+   "size": 3392262,
+   "romBytes": 5791760,
+   "extractBytes": 6079899,
+   "sha256": "4f4830a47d420888d9b8b78ab0d0f711ddf069d6cad42bc694d47bbb7e5d8a5c",
+   "asset": "pack-featured-racing.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-featured-racing.zip"
+  },
+  {
+   "id": "featured-board",
+   "tier": "featured",
+   "name": "精选包 · 棋牌",
+   "platform": "FC/MD/SFC",
+   "platforms": [
+    "FC",
+    "MD",
+    "SFC"
+   ],
+   "genre": "棋牌",
+   "part": 1,
+   "parts": 1,
+   "count": 16,
+   "size": 17480640,
+   "romBytes": 29098000,
+   "extractBytes": 29671132,
+   "sha256": "e7eef8dfea009dbf468a18fc2432d7f5a41ceabee17453e1cfe670df846540a3",
+   "asset": "pack-featured-board.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-featured-board.zip"
+  },
+  {
+   "id": "ext-fc-action",
+   "tier": "extended",
+   "name": "扩展包 · FC · 动作",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "动作",
+   "part": 1,
+   "parts": 1,
+   "count": 448,
+   "size": 58665417,
+   "romBytes": 127198719,
+   "extractBytes": 135673578,
+   "sha256": "7e73f1a5fbf8392a2a1d098bbd8c6c7b67601dc18a5533bb36a7fecbf9349959",
+   "asset": "pack-ext-fc-action.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-action.zip"
+  },
+  {
+   "id": "ext-fc-rpg-01",
+   "tier": "extended",
+   "name": "扩展包 · FC · 角色扮演 01",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "角色扮演",
+   "part": 1,
+   "parts": 2,
+   "count": 283,
+   "size": 99156629,
+   "romBytes": 280007344,
+   "extractBytes": 287765123,
+   "sha256": "b79e3a88f3d5db77cdd36ef1d83b0287c4194181106e8b01d9ed8081fa5a3eaa",
+   "asset": "pack-ext-fc-rpg-01.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-rpg-01.zip"
+  },
+  {
+   "id": "ext-fc-rpg-02",
+   "tier": "extended",
+   "name": "扩展包 · FC · 角色扮演 02",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "角色扮演",
+   "part": 2,
+   "parts": 2,
+   "count": 56,
+   "size": 17650748,
+   "romBytes": 48628608,
+   "extractBytes": 50166486,
+   "sha256": "e527d3e32f400417dc5b55925de4b0283612fc6f1a9a75252349ed979b4bc736",
+   "asset": "pack-ext-fc-rpg-02.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-rpg-02.zip"
+  },
+  {
+   "id": "ext-fc-fighting",
+   "tier": "extended",
+   "name": "扩展包 · FC · 格斗",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "格斗",
+   "part": 1,
+   "parts": 1,
+   "count": 26,
+   "size": 4548693,
+   "romBytes": 9059072,
+   "extractBytes": 9717543,
+   "sha256": "fcb43ca198278d3e61ad16bab783c34f2a57b26b151a37527a163281d9f2ddfd",
+   "asset": "pack-ext-fc-fighting.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-fighting.zip"
+  },
+  {
+   "id": "ext-fc-shooter",
+   "tier": "extended",
+   "name": "扩展包 · FC · 射击",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "射击",
+   "part": 1,
+   "parts": 1,
+   "count": 156,
+   "size": 12847426,
+   "romBytes": 24783968,
+   "extractBytes": 28091044,
+   "sha256": "b94b5763c3c22fa862c81350e3c499506229497466d67d7a6958dbe461aff6d2",
+   "asset": "pack-ext-fc-shooter.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-shooter.zip"
+  },
+  {
+   "id": "ext-fc-strategy",
+   "tier": "extended",
+   "name": "扩展包 · FC · 策略",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "策略",
+   "part": 1,
+   "parts": 1,
+   "count": 91,
+   "size": 22756861,
+   "romBytes": 58590640,
+   "extractBytes": 60769989,
+   "sha256": "af828b0ecce1b1ed9a5ad648737ef56ed2d152a97ee220e1a192ef151dae778f",
+   "asset": "pack-ext-fc-strategy.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-strategy.zip"
+  },
+  {
+   "id": "ext-fc-puzzle",
+   "tier": "extended",
+   "name": "扩展包 · FC · 益智",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "益智",
+   "part": 1,
+   "parts": 1,
+   "count": 83,
+   "size": 5215485,
+   "romBytes": 9471408,
+   "extractBytes": 11390061,
+   "sha256": "1d1c936d6bdaea1dc71e766ec0db4713c13a6e918bea7589dffe7ec988050943",
+   "asset": "pack-ext-fc-puzzle.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-puzzle.zip"
+  },
+  {
+   "id": "ext-fc-sports",
+   "tier": "extended",
+   "name": "扩展包 · FC · 体育",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "体育",
+   "part": 1,
+   "parts": 1,
+   "count": 31,
+   "size": 4984311,
+   "romBytes": 12173856,
+   "extractBytes": 12878975,
+   "sha256": "b1ca07e0c08efaa1a1c3a0cdf5f2fcac52e5d7e3d33228e009c241e2147a8419",
+   "asset": "pack-ext-fc-sports.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-sports.zip"
+  },
+  {
+   "id": "ext-fc-racing",
+   "tier": "extended",
+   "name": "扩展包 · FC · 竞速",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "竞速",
+   "part": 1,
+   "parts": 1,
+   "count": 25,
+   "size": 1106219,
+   "romBytes": 1892752,
+   "extractBytes": 2498158,
+   "sha256": "b2a666554cdcda0cef3e11dd27ac7a69b658211c893a6590c94f97cdcbdb64d2",
+   "asset": "pack-ext-fc-racing.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-racing.zip"
+  },
+  {
+   "id": "ext-fc-adventure",
+   "tier": "extended",
+   "name": "扩展包 · FC · 冒险",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "冒险",
+   "part": 1,
+   "parts": 1,
+   "count": 8,
+   "size": 2034156,
+   "romBytes": 4980864,
+   "extractBytes": 5202362,
+   "sha256": "25a56b1e02ffd75271d7b5fd57eaef639891382e8fc64773a56138a2f9c76ca4",
+   "asset": "pack-ext-fc-adventure.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-adventure.zip"
+  },
+  {
+   "id": "ext-fc-table",
+   "tier": "extended",
+   "name": "扩展包 · FC · 桌面",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "桌面",
+   "part": 1,
+   "parts": 1,
+   "count": 59,
+   "size": 6507747,
+   "romBytes": 13755312,
+   "extractBytes": 15363349,
+   "sha256": "db06c723840ce1cefb2641986c55e3dffb61ec82fcd822191619562f95b0457c",
+   "asset": "pack-ext-fc-table.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-table.zip"
+  },
+  {
+   "id": "ext-fc-misc-01",
+   "tier": "extended",
+   "name": "扩展包 · FC · 综合 01",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "其他",
+   "part": 1,
+   "parts": 3,
+   "count": 1161,
+   "size": 147683814,
+   "romBytes": 252161088,
+   "extractBytes": 277784462,
+   "sha256": "cc590c9afeb74a005d8d30c478972347084a5cd8f06d4f67ef8c28baa2bd5aa4",
+   "asset": "pack-ext-fc-misc-01.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-misc-01.zip"
+  },
+  {
+   "id": "ext-fc-misc-02",
+   "tier": "extended",
+   "name": "扩展包 · FC · 综合 02",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "其他",
+   "part": 2,
+   "parts": 3,
+   "count": 1116,
+   "size": 144751755,
+   "romBytes": 259040608,
+   "extractBytes": 279116321,
+   "sha256": "f070b82eb03cb23463870121fc031248da8761671498d1ff44b7318d73c040e1",
+   "asset": "pack-ext-fc-misc-02.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-misc-02.zip"
+  },
+  {
+   "id": "ext-fc-misc-03",
+   "tier": "extended",
+   "name": "扩展包 · FC · 综合 03",
+   "platform": "FC",
+   "platforms": [
+    "FC"
+   ],
+   "genre": "其他",
+   "part": 3,
+   "parts": 3,
+   "count": 576,
+   "size": 82258345,
+   "romBytes": 147268576,
+   "extractBytes": 156943936,
+   "sha256": "442f09a37053311239be33dc87fab9f45ad2c7742cf75a64b703be6a41a1c21d",
+   "asset": "pack-ext-fc-misc-03.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-fc-misc-03.zip"
+  },
+  {
+   "id": "ext-md-misc-01",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 01",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 1,
+   "parts": 15,
+   "count": 198,
+   "size": 140565408,
+   "romBytes": 278244606,
+   "extractBytes": 281571052,
+   "sha256": "4ade624fb77c982a04d3a79687557b3b155e03319d6a103ad50dd5fa09582b0d",
+   "asset": "pack-ext-md-misc-01.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-01.zip"
+  },
+  {
+   "id": "ext-md-misc-02",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 02",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 2,
+   "parts": 15,
+   "count": 210,
+   "size": 153243396,
+   "romBytes": 278575132,
+   "extractBytes": 281249871,
+   "sha256": "67b22fd66563ec4adb032a34ed2788e7f127e5897c47eaeeff4334b35659daf7",
+   "asset": "pack-ext-md-misc-02.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-02.zip"
+  },
+  {
+   "id": "ext-md-misc-03",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 03",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 3,
+   "parts": 15,
+   "count": 152,
+   "size": 134794949,
+   "romBytes": 266533143,
+   "extractBytes": 269282107,
+   "sha256": "da157212db9b9a9efc3365c4f17b9a653ba86e646059ace776313b96a0119444",
+   "asset": "pack-ext-md-misc-03.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-03.zip"
+  },
+  {
+   "id": "ext-md-misc-04",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 04",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 4,
+   "parts": 15,
+   "count": 216,
+   "size": 143303178,
+   "romBytes": 282499642,
+   "extractBytes": 285927239,
+   "sha256": "4221af211b439eb51454c98cd7a2edc86a4d3ea66e4232c758798e2c854fa484",
+   "asset": "pack-ext-md-misc-04.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-04.zip"
+  },
+  {
+   "id": "ext-md-misc-05",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 05",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 5,
+   "parts": 15,
+   "count": 212,
+   "size": 151082541,
+   "romBytes": 279175292,
+   "extractBytes": 282502509,
+   "sha256": "e6b77a03ef5b659e091a213315b820446fee2ffaae0a9656cb2f863d36c7fc60",
+   "asset": "pack-ext-md-misc-05.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-05.zip"
+  },
+  {
+   "id": "ext-md-misc-06",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 06",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 6,
+   "parts": 15,
+   "count": 179,
+   "size": 130038645,
+   "romBytes": 248642432,
+   "extractBytes": 251674648,
+   "sha256": "775738e6b0540be2744386dc49b932eba6aa1e8f33fd3a425b7b697c47c31590",
+   "asset": "pack-ext-md-misc-06.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-06.zip"
+  },
+  {
+   "id": "ext-md-misc-07",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 07",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 7,
+   "parts": 15,
+   "count": 160,
+   "size": 133792672,
+   "romBytes": 283605767,
+   "extractBytes": 285550663,
+   "sha256": "06023368f19dd5c366c5c5a66dc571ac0579ad5f9fe7158014eb3e7e330af7d3",
+   "asset": "pack-ext-md-misc-07.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-07.zip"
+  },
+  {
+   "id": "ext-md-misc-08",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 08",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 8,
+   "parts": 15,
+   "count": 174,
+   "size": 157031235,
+   "romBytes": 282852548,
+   "extractBytes": 285784636,
+   "sha256": "341fb805af8b562cbd886f8f79c0fcf7e58c8a322c65b5892c676a8d62c784dd",
+   "asset": "pack-ext-md-misc-08.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-08.zip"
+  },
+  {
+   "id": "ext-md-misc-09",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 09",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 9,
+   "parts": 15,
+   "count": 200,
+   "size": 156868981,
+   "romBytes": 274481760,
+   "extractBytes": 277419341,
+   "sha256": "74dcaf8d77590a1546a702f94d71d76ce3f352fd6015e4d7c72ab5a87d839996",
+   "asset": "pack-ext-md-misc-09.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-09.zip"
+  },
+  {
+   "id": "ext-md-misc-10",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 10",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 10,
+   "parts": 15,
+   "count": 118,
+   "size": 124984308,
+   "romBytes": 224392392,
+   "extractBytes": 226215408,
+   "sha256": "9820956f0302ec42aa1cabcf3b71ed69bbc23bd1128fc1fd5eabb97db9628b2c",
+   "asset": "pack-ext-md-misc-10.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-10.zip"
+  },
+  {
+   "id": "ext-md-misc-11",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 11",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 11,
+   "parts": 15,
+   "count": 164,
+   "size": 123918390,
+   "romBytes": 257295040,
+   "extractBytes": 259672022,
+   "sha256": "7b826cdfbcc47825a7331cadbbe5897f554f7fb9a497e37427fbe4c472a3a882",
+   "asset": "pack-ext-md-misc-11.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-11.zip"
+  },
+  {
+   "id": "ext-md-misc-12",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 12",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 12,
+   "parts": 15,
+   "count": 197,
+   "size": 150806542,
+   "romBytes": 280847208,
+   "extractBytes": 283900431,
+   "sha256": "fb664117d335a9d4842efeafc2aeb95defe569996c4f6240552e2977bd46f254",
+   "asset": "pack-ext-md-misc-12.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-12.zip"
+  },
+  {
+   "id": "ext-md-misc-13",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 13",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 13,
+   "parts": 15,
+   "count": 164,
+   "size": 136512215,
+   "romBytes": 260564364,
+   "extractBytes": 262679834,
+   "sha256": "0436f44d4e2967ab94e40eba7fd4ff5d79a5dad230b41843f63e74ca5ecaabd2",
+   "asset": "pack-ext-md-misc-13.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-13.zip"
+  },
+  {
+   "id": "ext-md-misc-14",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 14",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 14,
+   "parts": 15,
+   "count": 124,
+   "size": 148903853,
+   "romBytes": 277713929,
+   "extractBytes": 279174351,
+   "sha256": "146dcdd177930fc4bf6d9c4c086d23d17b79b9f513f952db2a6506b8a1724484",
+   "asset": "pack-ext-md-misc-14.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-14.zip"
+  },
+  {
+   "id": "ext-md-misc-15",
+   "tier": "extended",
+   "name": "扩展包 · MD · 综合 15",
+   "platform": "MD",
+   "platforms": [
+    "MD"
+   ],
+   "genre": "其他",
+   "part": 15,
+   "parts": 15,
+   "count": 115,
+   "size": 98530304,
+   "romBytes": 206168431,
+   "extractBytes": 209004834,
+   "sha256": "aa5c7392ef5645d185f2222ee5cb3c97873c1d419d0e44a08241ce0bfa9d58b4",
+   "asset": "pack-ext-md-misc-15.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-md-misc-15.zip"
+  },
+  {
+   "id": "ext-sfc-misc-01",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 01",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 1,
+   "parts": 22,
+   "count": 192,
+   "size": 175339493,
+   "romBytes": 279707648,
+   "extractBytes": 283965937,
+   "sha256": "86bcaa58769762741c848ad0b0378805e2a033219e63e1f8c7ebed84d37e670e",
+   "asset": "pack-ext-sfc-misc-01.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-01.zip"
+  },
+  {
+   "id": "ext-sfc-misc-02",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 02",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 2,
+   "parts": 22,
+   "count": 189,
+   "size": 169725982,
+   "romBytes": 278396928,
+   "extractBytes": 283285424,
+   "sha256": "a6aeb649875267ae6121e1dc11b38bf7dee35c5b3405605d140fcf75a2891ee1",
+   "asset": "pack-ext-sfc-misc-02.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-02.zip"
+  },
+  {
+   "id": "ext-sfc-misc-03",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 03",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 3,
+   "parts": 22,
+   "count": 172,
+   "size": 169599113,
+   "romBytes": 273547264,
+   "extractBytes": 277419364,
+   "sha256": "a35a865f1f3762434a7b7ad031af68919ecff123773b5a6da99610ddbf64b043",
+   "asset": "pack-ext-sfc-misc-03.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-03.zip"
+  },
+  {
+   "id": "ext-sfc-misc-04",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 04",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 4,
+   "parts": 22,
+   "count": 142,
+   "size": 175859166,
+   "romBytes": 279238296,
+   "extractBytes": 282622762,
+   "sha256": "894165572bc93826c598f685555d62bcf73e9cb07144736aa0d45fe1b31c96a7",
+   "asset": "pack-ext-sfc-misc-04.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-04.zip"
+  },
+  {
+   "id": "ext-sfc-misc-05",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 05",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 5,
+   "parts": 22,
+   "count": 151,
+   "size": 170890661,
+   "romBytes": 274726912,
+   "extractBytes": 278315741,
+   "sha256": "0eb4441d782e0b4186bc9c8986b4e2d3aede2d87f103b097f2aa3be69e7c4649",
+   "asset": "pack-ext-sfc-misc-05.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-05.zip"
+  },
+  {
+   "id": "ext-sfc-misc-06",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 06",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 6,
+   "parts": 22,
+   "count": 170,
+   "size": 174572539,
+   "romBytes": 281411584,
+   "extractBytes": 284892087,
+   "sha256": "858fab8a097cd45ed5be288b29b83d5b6ad63b7c4dd83576c4f4e8438d29992b",
+   "asset": "pack-ext-sfc-misc-06.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-06.zip"
+  },
+  {
+   "id": "ext-sfc-misc-07",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 07",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 7,
+   "parts": 22,
+   "count": 195,
+   "size": 174651925,
+   "romBytes": 278921216,
+   "extractBytes": 283605806,
+   "sha256": "2d25f2adc30677106e9c3dccc9f2fdca09842a9d5419ad84aab0ea432004d69a",
+   "asset": "pack-ext-sfc-misc-07.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-07.zip"
+  },
+  {
+   "id": "ext-sfc-misc-08",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 08",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 8,
+   "parts": 22,
+   "count": 179,
+   "size": 176578147,
+   "romBytes": 280231936,
+   "extractBytes": 284278275,
+   "sha256": "ffda3644ff82f8622c080bdc972bbbf6894175de050161c80c315898cd8e0fd6",
+   "asset": "pack-ext-sfc-misc-08.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-08.zip"
+  },
+  {
+   "id": "ext-sfc-misc-09",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 09",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 9,
+   "parts": 22,
+   "count": 196,
+   "size": 178546538,
+   "romBytes": 279445504,
+   "extractBytes": 284158398,
+   "sha256": "bf13a123de5cc87d21124311642e86810e36085665ea9a3e747b711bb86d0c5d",
+   "asset": "pack-ext-sfc-misc-09.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-09.zip"
+  },
+  {
+   "id": "ext-sfc-misc-10",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 10",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 10,
+   "parts": 22,
+   "count": 164,
+   "size": 183557605,
+   "romBytes": 281542656,
+   "extractBytes": 285188535,
+   "sha256": "3525e1fd368a726baa8666827b8de343b63212f8a7d0e8a71a00a5e61ce20942",
+   "asset": "pack-ext-sfc-misc-10.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-10.zip"
+  },
+  {
+   "id": "ext-sfc-misc-11",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 11",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 11,
+   "parts": 22,
+   "count": 189,
+   "size": 168408663,
+   "romBytes": 279445504,
+   "extractBytes": 283923159,
+   "sha256": "9e86f1a3012d251fc9a5c115c92e02c5b5777acac727c6945e3e36037d7f2586",
+   "asset": "pack-ext-sfc-misc-11.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-11.zip"
+  },
+  {
+   "id": "ext-sfc-misc-12",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 12",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 12,
+   "parts": 22,
+   "count": 196,
+   "size": 167626591,
+   "romBytes": 280231936,
+   "extractBytes": 284485259,
+   "sha256": "a7f816c23d8bac5ca6529e7cec8e08ed81b22f2fabebd3913ab112a1bc6bccac",
+   "asset": "pack-ext-sfc-misc-12.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-12.zip"
+  },
+  {
+   "id": "ext-sfc-misc-13",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 13",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 13,
+   "parts": 22,
+   "count": 188,
+   "size": 173150212,
+   "romBytes": 279151104,
+   "extractBytes": 283710861,
+   "sha256": "2b8d75b11a7ad9badeef53aa9d6ae0a93d69311a41748df5df2d699122811855",
+   "asset": "pack-ext-sfc-misc-13.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-13.zip"
+  },
+  {
+   "id": "ext-sfc-misc-14",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 14",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 14,
+   "parts": 22,
+   "count": 188,
+   "size": 175974038,
+   "romBytes": 281280512,
+   "extractBytes": 285387986,
+   "sha256": "088d4adf7cb31f74b216cf08fc6e1ada905dbb7185ef32fdd4e8eaea535b6324",
+   "asset": "pack-ext-sfc-misc-14.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-14.zip"
+  },
+  {
+   "id": "ext-sfc-misc-15",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 15",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 15,
+   "parts": 22,
+   "count": 196,
+   "size": 175806278,
+   "romBytes": 278222907,
+   "extractBytes": 282415522,
+   "sha256": "42254f6895477cb212fbff4bc3605f895b59dd0f8834a9f8341330b309de04c2",
+   "asset": "pack-ext-sfc-misc-15.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-15.zip"
+  },
+  {
+   "id": "ext-sfc-misc-16",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 16",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 16,
+   "parts": 22,
+   "count": 194,
+   "size": 161682112,
+   "romBytes": 270008320,
+   "extractBytes": 274512997,
+   "sha256": "07830e8bcf6e1b3bcb1cd1f0937058075eac9726d7fa722265eb590e53764857",
+   "asset": "pack-ext-sfc-misc-16.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-16.zip"
+  },
+  {
+   "id": "ext-sfc-misc-17",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 17",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 17,
+   "parts": 22,
+   "count": 210,
+   "size": 171679852,
+   "romBytes": 280002560,
+   "extractBytes": 284279139,
+   "sha256": "04ab2e6a2382cfff52e07fe16c58bd25bda09523a0d2f6e1313c0c831383f128",
+   "asset": "pack-ext-sfc-misc-17.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-17.zip"
+  },
+  {
+   "id": "ext-sfc-misc-18",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 18",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 18,
+   "parts": 22,
+   "count": 173,
+   "size": 180746173,
+   "romBytes": 278134784,
+   "extractBytes": 281899752,
+   "sha256": "db629650c52ac4058ba4b354b1a582ffe22e7825055de7709b24d6c031fc09aa",
+   "asset": "pack-ext-sfc-misc-18.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-18.zip"
+  },
+  {
+   "id": "ext-sfc-misc-19",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 19",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 19,
+   "parts": 22,
+   "count": 164,
+   "size": 169735656,
+   "romBytes": 277086208,
+   "extractBytes": 281069196,
+   "sha256": "94b6de7ab8fbfef8952e36cfbf1add61ff2516c18f9896b922b23c1539e45f3c",
+   "asset": "pack-ext-sfc-misc-19.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-19.zip"
+  },
+  {
+   "id": "ext-sfc-misc-20",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 20",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 20,
+   "parts": 22,
+   "count": 187,
+   "size": 173660134,
+   "romBytes": 279838720,
+   "extractBytes": 284094904,
+   "sha256": "a96e16688e6ba6cc81ecadaf01a81ca6c30e5c46530790b91ba003e288488469",
+   "asset": "pack-ext-sfc-misc-20.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-20.zip"
+  },
+  {
+   "id": "ext-sfc-misc-21",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 21",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 21,
+   "parts": 22,
+   "count": 154,
+   "size": 171439923,
+   "romBytes": 281410642,
+   "extractBytes": 284763970,
+   "sha256": "3fe8dcf78472bc651162384e086dd71ee5828ae66334ad04c3ddf78260e00d61",
+   "asset": "pack-ext-sfc-misc-21.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-21.zip"
+  },
+  {
+   "id": "ext-sfc-misc-22",
+   "tier": "extended",
+   "name": "扩展包 · SFC · 综合 22",
+   "platform": "SFC",
+   "platforms": [
+    "SFC"
+   ],
+   "genre": "其他",
+   "part": 22,
+   "parts": 22,
+   "count": 88,
+   "size": 128229068,
+   "romBytes": 228656128,
+   "extractBytes": 230529063,
+   "sha256": "79a70b331eb517494aa15118f7d53ae7a6b68bea3c660ae1da397e1d29fbc0fd",
+   "asset": "pack-ext-sfc-misc-22.zip",
+   "url": "https://github.com/fatherxu/childhood-arcade/releases/download/v1.1.0/pack-ext-sfc-misc-22.zip"
+  }
+ ]
+}

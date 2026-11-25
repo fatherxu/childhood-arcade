@@ -203,3 +203,26 @@ nav.nav-many button{flex:1 1 auto;white-space:nowrap;padding-left:.25em;padding-
 .lan-qr{width:15vh;max-width:100%;height:auto;margin:.6vh auto;background:#fff;border:6px solid #fff;border-radius:6px;image-rendering:pixelated;display:block}
 .lan-address{font-size:.78em;line-height:1.45;word-break:break-all;overflow-wrap:break-word;-webkit-user-select:text;user-select:text;background:#fff;border:1px dashed #b78321;border-radius:6px;padding:.4em;margin:.4em 0 0;color:#3a2418}
 @media(max-width:800px){.resume-banner{flex-direction:column;align-items:stretch;gap:.6vh}.resume-actions{justify-content:flex-end}.check-list{-webkit-columns:1;columns:1}.wizard-card{max-width:none}.pause-grid{grid-template-columns:1fr}.pause-grid .pause-wide{grid-column:auto}.lan-info{grid-template-columns:1fr}.lan-qr{width:22vh}}
+.pack-page{display:flex;flex-direction:column;gap:1.2vh;padding-bottom:2vh}
+.pack-head{background:#fff3d8;border:2px solid #c88917;border-radius:12px;padding:1.4vh 1.6vw;flex-shrink:0}
+.pack-head h3{margin:.1em 0 .4em;color:var(--red)}
+.pack-tabs{display:flex;flex-wrap:wrap;gap:.6vw .8vw;margin:.6vh 0;align-items:center}
+.pack-tabs button{margin:0;font-size:.85em;padding:.35em .9em}
+.pack-platforms button{font-size:.8em}
+.pack-summary{margin:.4em 0 0;font-size:.78em;color:#7a5236;line-height:1.5}
+.pack-active{background:#fff8e8;border:2px dashed #c88917;border-radius:10px;padding:.8vh 1vw;margin:.8vh 0}
+.pack-active-head{display:flex;justify-content:space-between;align-items:center;gap:1vw;font-size:.85em}
+.pack-active-head button{margin:0;font-size:.85em;padding:.25em .8em}
+.pack-list{display:flex;flex-direction:column;gap:.7vh}
+.pack-row{display:flex;justify-content:space-between;align-items:center;gap:1vw;background:#fff8e8;border:2px solid #c88917;border-radius:10px;padding:.7vh .9vw}
+.pack-row.installed{border-color:#1c6b35}
+.pack-row-main{display:flex;flex-direction:column;min-width:0;gap:.15em}
+.pack-row-main strong{color:#5b3a26;font-size:.95em;overflow-wrap:break-word}
+.pack-row-main small{color:#7a5236;font-size:.72em}
+.pack-badge{display:inline-block;align-self:flex-start;margin-top:.2em;padding:.02em .5em;border-radius:999px;background:#1c6b35;color:#fff8ea;font-size:.68em;font-style:normal;font-weight:700}
+.pack-badge.update{background:#c88917}
+.pack-row-action{flex-shrink:0}
+.pack-row-action button{margin:0;font-size:.8em;white-space:nowrap}
+.pack-wait{font-size:.72em;color:#7a5236}
+@media(max-width:800px){.pack-row{flex-direction:column;align-items:stretch}.pack-row-action{text-align:right}}
+

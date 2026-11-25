@@ -84,6 +84,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private android.content.SharedPreferences playerPrefs;
     private AppUpdates updates;
     private ResourcePack resources;
+    private GamePacks packs;
     private LanServer lan;
     private LegacyFiles legacyFiles;
 
@@ -98,6 +99,11 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         storeDir.mkdirs();
         updates=new AppUpdates(this);
         resources=new ResourcePack(this);
+        packs=new GamePacks(this,new GamePacks.Host(){
+            public int[] importPack(File root,GamePacks.Progress progress)throws Exception{return MainActivity.this.importPack(root,progress);}
+            public void cancelImport(){importCancel=true;}
+            public void postJs(String code){js(code);}
+        });
         legacyFiles=new LegacyFiles(this,new LegacyFiles.Host(){
             public void legacyImportFolder(File dir){startLegacyImport(dir);}
             public void legacyExportBackup(File dir){finishLegacyExport(dir);}
@@ -755,7 +761,8 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             js("Arcade.libraryResult("+added+","+skipped+","+JSONObject.quote(error==null?"":error)+")");
         }},"ArcadeLegacyImport").start();
     }
-    private int[] importFolder(File root)throws Exception{
+    private int[] importFolder(File root)throws Exception{return importFolder(root,null,null);}
+    private int[] importFolder(File root,GamePacks.Progress progress,ArrayList<File> written)throws Exception{
         HashMap<String,PackEntry> byName=new HashMap<String,PackEntry>();
         HashMap<String,PackEntry> byPath=readPack(root,byName);
         HashMap<String,Cover> covers=readCovers(root);
@@ -781,6 +788,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         try{
             for(int i=0;i<found.size();i++){
                 if(importCancel)throw new IOException("已取消导入");
+                if(progress!=null)progress.onProgress(i,found.size());
                 Candidate candidate=found.get(i);
                 String shape=candidate.relative+"|"+candidate.size;
                 if(knownShapes.contains(shape)){skipped++;continue;}
@@ -793,14 +801,30 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 File rom=new File(folder,dest[1]);
                 if(rom.exists())rom.delete();
                 if(!temp.renameTo(rom))throw new IOException("写入游戏文件失败，请检查存储空间");
+                if(written!=null)written.add(rom);
                 String cover=candidate.meta!=null?saveCover(covers,candidate.meta.cover,hash):null;
                 if(cover==null)cover=saveCover(covers,candidate.name,hash);
                 records.put(libraryRecord(candidate,hash,dest[0]+"/"+dest[1],cover));
                 known.add(hash);knownShapes.add(shape);added++;
             }
         }finally{deleteTree(staging);}
+        if(progress!=null)progress.onProgress(found.size(),found.size());
         synchronized(storeLock){atomicWrite(new File(storeDir,"library.json"),"{\"schema\":1,\"games\":"+records.toString()+"}");}
         return new int[]{added,skipped};
+    }
+    private int[] importPack(File root,GamePacks.Progress progress)throws Exception{
+        if(scanning)throw new IOException("正在导入其他游戏，请稍候");
+        scanning=true;importCancel=false;
+        ArrayList<File> written=new ArrayList<File>();
+        boolean ok=false;
+        try{
+            int[] result=importFolder(root,progress,written);
+            ok=true;
+            return result;
+        }finally{
+            scanning=false;
+            if(!ok)for(File file:written){try{file.delete();}catch(Throwable ignored){}}
+        }
     }
     private HashMap<String,PackEntry> readPack(File root,HashMap<String,PackEntry> byName)throws Exception{
         HashMap<String,PackEntry> byPath=new HashMap<String,PackEntry>();
@@ -948,6 +972,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public void downloadResourcePack(boolean allowMetered){resources.download(allowMetered);}
         @JavascriptInterface public String resourcePackStatus(){return resources.status();}
         @JavascriptInterface public void cancelResourcePack(){resources.cancel();}
+        @JavascriptInterface public String gamePackStatus(){return packs.status();}
+        @JavascriptInterface public String checkGamePacks(){packs.check();return packs.status();}
+        @JavascriptInterface public void downloadGamePack(String id,boolean allowMetered){packs.download(id,allowMetered);}
+        @JavascriptInterface public void cancelGamePack(){packs.cancel();}
         @JavascriptInterface public long freeBytes(){try{return new StatFs(getFilesDir().getAbsolutePath()).getAvailableBytes();}catch(Throwable e){return 0;}}
         @JavascriptInterface public void nativeNesClose(){nativeNes.close();}
         @JavascriptInterface public void nativeNesButton(int player,int button,boolean down){nativeNes.button(player,button,down);}
