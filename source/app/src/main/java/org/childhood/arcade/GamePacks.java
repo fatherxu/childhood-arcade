@@ -318,8 +318,6 @@ final class GamePacks {
             deleteTree(staging);
             if (!staging.isDirectory() && !staging.mkdirs()) throw new IOException("无法创建游戏包解压目录");
             unzip(zip, staging, extract);
-            deleteTree(zip);
-            deleteTree(part);
             File manifest = new File(staging, "pack.json");
             if (!manifest.isFile() || manifest.length() < 2 || manifest.length() > MAX_MANIFEST) {
                 throw new IOException("游戏包缺少清单文件");
@@ -339,6 +337,8 @@ final class GamePacks {
             int added = result[0];
             int skipped = result[1];
             markInstalled(id, sha, added, skipped);
+            deleteTree(zip);
+            deleteTree(part);
             deleteTree(staging);
             synchronized (lock) {
                 phase = "done";

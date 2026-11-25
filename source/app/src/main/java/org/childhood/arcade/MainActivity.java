@@ -823,7 +823,14 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             return result;
         }finally{
             scanning=false;
-            if(!ok)for(File file:written){try{file.delete();}catch(Throwable ignored){}}
+            if(!ok){
+                HashSet<String> bases=new HashSet<String>();
+                for(File file:written){bases.add(stem(file.getName()));try{file.delete();}catch(Throwable ignored){}}
+                File[] covers=new File(getFilesDir(),"library/covers").listFiles();
+                if(covers!=null)for(File cover:covers){
+                    if(bases.contains(stem(cover.getName())))try{cover.delete();}catch(Throwable ignored){}
+                }
+            }
         }
     }
     private HashMap<String,PackEntry> readPack(File root,HashMap<String,PackEntry> byName)throws Exception{

@@ -54,7 +54,8 @@ function view(){
  head+='<p class="pack-summary">精选 '+featuredGames+' 款 · 扩展 '+extendedGames+' 款 · 已导入 '+ctx.esc(s.installedGames||0)+' 款 · 电视剩余 '+ctx.esc(ctx.formatBytes(s.freeBytes||0))+' · 目录 '+(s.catalogVersion?('v'+ctx.esc(s.catalogVersion)):'未加载')+(s.catalogSource==='remote'?'（在线）':s.catalogSource==='bundled'?'（内置）':s.catalogSource==='cache'?'（缓存）':'')+'</p></div>';
  if(s.catalogError)head+='<p class="check-error">'+ctx.esc(s.catalogError)+'</p>';
  if(Number(s.minVersionCode)>Number(s.appVersionCode))head+='<p class="check-error">当前应用版本过低，请先在「软件更新」中升级后再下载游戏包。</p>';
- if(s.error&&!busy(s))head+='<p class="check-error">'+ctx.esc(s.error)+'</p>';
+ if(s.error&&!busy(s)&&s.error!==s.catalogError)head+='<p class="check-error">'+ctx.esc(s.error)+'</p>';
+ if(s.state==='cancelled')head+='<p class="notice">已取消，已下载的部分会保留，可再次下载继续。</p>';
  head+=progressHtml(s);
  var body=packs.length?'<div class="pack-list">'+packs.map(function(p){return row(s,p);}).join('')+'</div>':'<div class="cartridge settings-panel"><p class="notice">这个分类暂时没有游戏包。</p></div>';
  return ctx.title('游戏包','设置')+'<main class="pack-page">'+head+body+'</main>';
@@ -64,7 +65,7 @@ function startPoll(){stop();poll=setInterval(tick,900);}
 function tick(){
  if(!ctx||ctx.state.page!=='packs'){stop();return;}
  var s=status();if(!s)return;
- var key=[s.state,s.packId,s.catalogVersion,s.catalogSource,s.installedPacks,s.catalogError,s.error,s.minVersionCode].join('|');
+ var key=[s.state,s.packId,s.catalogVersion,s.catalogSource,s.installedPacks,s.installedGames,s.catalogError,s.error,s.minVersionCode].join('|');
  if(key!==lastKey){lastKey=key;ctx.render('packs:');return;}
  var pct=Math.max(0,Math.min(100,Number(s.progress)||0));
  var fill=document.getElementById('pack-active-fill'),text=document.getElementById('pack-active-text');
@@ -93,7 +94,7 @@ function confirmDownload(id,reimport){
 }
 function metered(id){
  var s=status();var p=find(s,id);
- ctx.dialog('使用移动数据下载？','<p>当前网络可能按流量计费，'+ (p?ctx.esc(p.name)+'约 '+ctx.esc(ctx.formatBytes(p.size||0)):'这个游戏包体积较大') +'。</p><p class="notice">建议连接 Wi-Fi 后下载；继续会消耗较多移动数据。</p>',[{text:'继续下载',fn:function(){start(id,true);}},{text:'取消',primary:true,fn:function(){ctx.render('packs:');}}],1);
+ ctx.dialog('使用移动数据下载？','<p>当前网络可能按流量计费，'+ (p?ctx.esc(p.name)+' 约 '+ctx.esc(ctx.formatBytes(p.size||0)):'这个游戏包体积较大') +'。</p><p class="notice">建议连接 Wi-Fi 后下载；继续会消耗较多移动数据。</p>',[{text:'继续下载',fn:function(){start(id,true);}},{text:'取消',primary:true,fn:function(){ctx.render('packs:');}}],1);
 }
 function open(){
  var n=api();
