@@ -281,6 +281,9 @@ final class GamePacks {
         File part = new File(cacheRoot, id + ".part");
         try {
             if (pack == null) throw new IOException("游戏包信息不存在");
+            if (!cacheRoot.isDirectory() && !cacheRoot.mkdirs()) {
+                throw new IOException("无法创建下载缓存目录，请检查存储空间");
+            }
             long size = pack.optLong("size", 0);
             String sha = pack.optString("sha256", "").toLowerCase(Locale.US);
             long extract = Math.max(size, pack.optLong("extractBytes", 0));
