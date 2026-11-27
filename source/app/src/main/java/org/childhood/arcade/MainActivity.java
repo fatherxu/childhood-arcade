@@ -105,8 +105,6 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             public void cancelImport(){importCancel=true;}
             public void postJs(String code){js(code);}
         });
-        // 有电脑推送的离线游戏包时自动导入，不依赖电视访问 GitHub。
-        packs.importLocal();
         legacyFiles=new LegacyFiles(this,new LegacyFiles.Host(){
             public void legacyImportFolder(File dir){startLegacyImport(dir);}
             public void legacyExportBackup(File dir){finishLegacyExport(dir);}
@@ -159,7 +157,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 if("http".equals(scheme)||"https".equals(scheme))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));
                 return null;
             }
-            @Override public void onPageFinished(WebView v,String url){hideSystemUI();if(url.equals("https://appassets.androidplatform.net/assets/index.html"))getSharedPreferences("deployment",0).edit().putBoolean("page_loaded",true).apply();resyncPlayers();}
+            @Override public void onPageFinished(WebView v,String url){hideSystemUI();if(url.equals("https://appassets.androidplatform.net/assets/index.html")){getSharedPreferences("deployment",0).edit().putBoolean("page_loaded",true).apply();/* 页面就绪后再导入离线游戏包，导入结果才能刷新界面 */packs.importLocal();}resyncPlayers();}
             @Override public boolean onRenderProcessGone(WebView v,android.webkit.RenderProcessGoneDetail detail){if(v!=web)return true;android.util.Log.w("ArcadeWeb","渲染进程已退出，正在重建页面");uiHandler.post(new Runnable(){public void run(){if(isFinishing())return;try{recreate();}catch(Throwable ignored){finish();}}});return true;}
         });
         web.setWebChromeClient(new WebChromeClient(){
