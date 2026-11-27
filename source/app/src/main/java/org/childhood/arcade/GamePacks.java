@@ -19,6 +19,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -87,6 +88,8 @@ final class GamePacks {
     private volatile long total;
     private volatile boolean cancel;
     private volatile Thread worker;
+    /** 电脑通过 adb 推送到应用外部目录的离线游戏包，按包编号暂存。 */
+    private final HashMap<String, File> localZips = new HashMap<String, File>();
 
     GamePacks(Context context, Host host) {
         this.context = context.getApplicationContext();
@@ -274,13 +277,99 @@ final class GamePacks {
         }
     }
 
+    /**
+     * 导入电脑推送到电视的离线游戏包：
+     * Android/data/&lt;包名&gt;/files/packs/ 下的 zip 通过校验后直接导入，不再联网下载。
+     */
+    void importLocal() {
+        synchronized (lock) {
+            if (isBusy(phase) || "checking".equals(phase)) return;
+            phase = "checking";
+            error = "";
+            cancel = false;
+        }
+        Thread thread = new Thread(new Runnable() {
+            public void run() {
+                ArrayList<String> ids = new ArrayList<String>();
+                try {
+                    File root = context.getExternalFilesDir(null);
+                    if (root != null) scanLocal(new File(root, "packs"), ids);
+                    if (ids.isEmpty()) {
+                        synchronized (lock) {
+                            if ("checking".equals(phase)) phase = "ready";
+                        }
+                        return;
+                    }
+                    synchronized (lock) {
+                        phase = "ready";
+                    }
+                    for (int i = 0; i < ids.size() && !cancel; i++) {
+                        work(ids.get(i));
+                        if (!"done".equals(phase)) break;
+                    }
+                } catch (Throwable caught) {
+                    synchronized (lock) {
+                        phase = "error";
+                        error = message(caught);
+                    }
+                    Log.w("ArcadePacks", "offline import failed: " + message(caught));
+                } finally {
+                    worker = null;
+                }
+            }
+        }, "ArcadePackLocal");
+        worker = thread;
+        thread.start();
+    }
+
+    private void scanLocal(File dir, ArrayList<String> ids) {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (!file.isFile() || file.length() < 1) continue;
+            String id = idForAsset(file.getName());
+            if (id == null || ids.contains(id)) continue;
+            JSONObject pack = packById(id);
+            if (pack == null) continue;
+            long size = pack.optLong("size", 0);
+            String sha = pack.optString("sha256", "").toLowerCase(Locale.US);
+            if (!validZip(file, size, sha)) {
+                Log.w("ArcadePacks", "offline pack ignored: " + file.getName());
+                continue;
+            }
+            synchronized (lock) {
+                localZips.put(id, file);
+            }
+            ids.add(id);
+        }
+    }
+
+    private String idForAsset(String name) {
+        JSONObject value = catalog;
+        JSONArray packs = value == null ? null : value.optJSONArray("packs");
+        if (packs == null) return null;
+        for (int i = 0; i < packs.length(); i++) {
+            JSONObject pack = packs.optJSONObject(i);
+            if (pack == null) continue;
+            String id = pack.optString("id", "");
+            if (name.equals(pack.optString("asset", "")) || name.equals(id + ".zip")) return id;
+        }
+        return null;
+    }
+
     private void work(String id) {
         JSONObject pack = packById(id);
         File staging = new File(stagingRoot, id);
-        File zip = new File(cacheRoot, id + ".zip");
+        File local;
+        synchronized (lock) {
+            local = localZips.get(id);
+        }
+        boolean external = local != null;
+        File zip = external ? local : new File(cacheRoot, id + ".zip");
         File part = new File(cacheRoot, id + ".part");
         try {
             if (pack == null) throw new IOException("游戏包信息不存在");
+            if (external && !zip.isFile()) throw new IOException("离线游戏包不存在，请重新推送");
             if (!cacheRoot.isDirectory() && !cacheRoot.mkdirs()) {
                 throw new IOException("无法创建下载缓存目录，请检查存储空间");
             }
@@ -349,7 +438,15 @@ final class GamePacks {
             int added = result[0];
             int skipped = result[1];
             markInstalled(id, sha, added, skipped);
-            deleteTree(zip);
+            if (external) {
+                synchronized (lock) {
+                    localZips.remove(id);
+                }
+                // 离线包已经导入完成，删除推送文件释放空间。
+                if (!zip.delete()) Log.w("ArcadePacks", "cannot delete offline pack: " + zip);
+            } else {
+                deleteTree(zip);
+            }
             deleteTree(part);
             deleteTree(staging);
             synchronized (lock) {

@@ -105,6 +105,8 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             public void cancelImport(){importCancel=true;}
             public void postJs(String code){js(code);}
         });
+        // 有电脑推送的离线游戏包时自动导入，不依赖电视访问 GitHub。
+        packs.importLocal();
         legacyFiles=new LegacyFiles(this,new LegacyFiles.Host(){
             public void legacyImportFolder(File dir){startLegacyImport(dir);}
             public void legacyExportBackup(File dir){finishLegacyExport(dir);}
@@ -196,10 +198,33 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     @Override protected void onResume(){super.onResume();pageActive=true;}
     @Override protected void onPause(){pageActive=false;if(nativeNes!=null)try{nativeNes.pause();}catch(Throwable ignored){}super.onPause();js("Arcade.lifecyclePause()");}
     @Override protected void onDestroy(){if(lan!=null)lan.stop();if(packs!=null)packs.cancel();if(nativeNes!=null){try{nativeNes.close();}catch(RuntimeException e){android.util.Log.w("ArcadeCore","退出时游戏线程未能及时停止",e);}}if(inputs!=null)inputs.unregisterInputDeviceListener(this);uiHandler.removeCallbacks(captureTimeout);uiHandler.removeCallbacks(calibFinish);if(web!=null){web.removeJavascriptInterface("NativeArcade");web.destroy();web=null;}super.onDestroy();}
-    private boolean gamepad(KeyEvent event){
-        InputDevice device=InputDevice.getDevice(event.getDeviceId());
-        int sources=device==null?event.getSource():device.getSources();
-        return (sources&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD||(sources&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK;
+    /**
+     * 是否按手柄处理。除了系统标记的 GAMEPAD/JOYSTICK，一些 USB、蓝牙和
+     * 厂商遥控手柄会以键盘或自定义设备上报按键，这里一并识别。
+     */
+    private static boolean padDevice(InputDevice device){
+        if(device==null)return false;
+        int sources=device.getSources();
+        if((sources&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD)return true;
+        if((sources&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK)return true;
+        boolean[] faceKeys=device.hasKeys(KeyEvent.KEYCODE_BUTTON_A,KeyEvent.KEYCODE_BUTTON_B,KeyEvent.KEYCODE_BUTTON_X,KeyEvent.KEYCODE_BUTTON_Y);
+        boolean face=false;
+        for(int i=0;i<faceKeys.length;i++)if(faceKeys[i]){face=true;break;}
+        boolean axes=device.getMotionRange(MotionEvent.AXIS_X)!=null&&device.getMotionRange(MotionEvent.AXIS_Y)!=null;
+        if(face&&axes)return true;
+        String name=device.getName();
+        if(name!=null){
+            String lower=name.toLowerCase(Locale.ROOT);
+            if(lower.contains("gamepad")||lower.contains("joystick")||lower.contains("手柄")||lower.contains("摇杆"))return true;
+            if(lower.contains("controller")&&!lower.contains("vcontroller")&&!lower.contains("remote")&&!lower.contains("遥控"))return true;
+        }
+        return false;
+    }
+    /** 手柄设备，或已经保存过自定义绑定的设备（例如同一手柄的键盘接口）。 */
+    private boolean isPad(int id){
+        InputDevice device=InputDevice.getDevice(id);
+        if(padDevice(device))return true;
+        return device!=null&&gamepads.hasCustom(gamepads.key(device));
     }
     private String padFingerprint(int id){
         InputDevice device=InputDevice.getDevice(id);
@@ -303,16 +328,19 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         int code=e.getKeyCode();
         if(volumeKey(code))return super.dispatchKeyEvent(e);
         int id=e.getDeviceId();
-        boolean pad=gamepad(e);
+        boolean pad=isPad(id);
         boolean down=e.getAction()==KeyEvent.ACTION_DOWN;
         boolean repeat=e.getRepeatCount()>0;
-        if(captureKey!=null&&pad&&down&&!repeat){
+        if(captureKey!=null&&down&&!repeat){
             if(code==KeyEvent.KEYCODE_BACK||code==KeyEvent.KEYCODE_MENU||code==KeyEvent.KEYCODE_BUTTON_MODE){clearCapture(true);return true;}
             InputDevice device=InputDevice.getDevice(id);
             String key=device==null?null:gamepads.key(device);
-            if(key!=null&&key.equals(captureKey)){
+            // 绑定期间不再要求设备被系统标记成手柄；只要按的是目标手柄或手柄类设备就接受。
+            if(key!=null&&(key.equals(captureKey)||padDevice(device))){
                 int action=captureAction;
-                boolean ok=gamepads.bind(key,action,code);
+                if(action<0){clearCapture(true);return true;}
+                boolean ok=gamepads.bind(captureKey,action,code);
+                if(!key.equals(captureKey))ok=gamepads.bind(key,action,code)||ok;
                 clearCapture(false);
                 if(ok)js("Arcade.gamepadCaptured("+action+","+JSONObject.quote(GamepadProfile.keyLabel(code))+")");
                 else js("Arcade.gamepadCaptureCanceled()");
@@ -338,6 +366,33 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e){
         int source=e.getSource();
         boolean joystick=(source&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK||(source&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD;
+        if(captureKey!=null&&captureAction>=0&&e.getAction()==MotionEvent.ACTION_MOVE){
+            int cid=e.getDeviceId();
+            InputDevice device=InputDevice.getDevice(cid);
+            String key=device==null?null:gamepads.key(device);
+            if(key!=null&&(key.equals(captureKey)||padDevice(device))){
+                int axis=0,dir=0;
+                float hx=e.getAxisValue(MotionEvent.AXIS_HAT_X),hy=e.getAxisValue(MotionEvent.AXIS_HAT_Y);
+                if(Math.abs(hx)>=.5f){axis=MotionEvent.AXIS_HAT_X;dir=hx>0?1:-1;}
+                else if(Math.abs(hy)>=.5f){axis=MotionEvent.AXIS_HAT_Y;dir=hy>0?1:-1;}
+                else{
+                    int[] codes={MotionEvent.AXIS_X,MotionEvent.AXIS_Y,MotionEvent.AXIS_Z,MotionEvent.AXIS_RZ,MotionEvent.AXIS_RX,MotionEvent.AXIS_RY};
+                    for(int i=0;i<codes.length&&axis==0;i++){
+                        float value=e.getAxisValue(codes[i]);
+                        if(Math.abs(value)>=.7f){axis=codes[i];dir=value>0?1:-1;}
+                    }
+                }
+                if(axis!=0){
+                    int action=captureAction;
+                    boolean ok=gamepads.bindAxis(key,action,axis,dir);
+                    if(!key.equals(captureKey))ok=gamepads.bindAxis(captureKey,action,axis,dir)||ok;
+                    clearCapture(false);
+                    if(ok)js("Arcade.gamepadCaptured("+action+","+JSONObject.quote(GamepadProfile.axisLabel(axis,dir))+")");
+                    else js("Arcade.gamepadCaptureCanceled()");
+                    return true;
+                }
+            }
+        }
         if(!joystick||e.getAction()!=MotionEvent.ACTION_MOVE)return super.dispatchGenericMotionEvent(e);
         int id=e.getDeviceId();
         GamepadProfile.Profile profile=profile(id);
@@ -1042,7 +1097,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             try{if(Build.VERSION.SDK_INT>=26){PackageInfo info=WebView.getCurrentWebViewPackage();if(info!=null&&info.versionName!=null&&info.versionName.length()>0)webview=info.versionName;}}catch(Throwable e){errors.add(message(e));}
             try{out.put("webview",webview);}catch(Throwable e){errors.add(message(e));}
             int pads=0;
-            try{if(inputs!=null)for(int id:inputs.getInputDeviceIds()){InputDevice device=InputDevice.getDevice(id);if(device==null)continue;int sources=device.getSources();if((sources&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD||(sources&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK)pads++;}}catch(Throwable e){errors.add(message(e));}
+            try{if(inputs!=null)for(int id:inputs.getInputDeviceIds()){InputDevice device=InputDevice.getDevice(id);if(device!=null&&padDevice(device))pads++;}}catch(Throwable e){errors.add(message(e));}
             try{out.put("gamepads",pads);}catch(Throwable e){errors.add(message(e));}
             int count=0;long bytes=0;
             try{File file=new File(storeDir,"library.json");if(file.isFile()){JSONArray games=new JSONObject(new String(readAll(new FileInputStream(file),32*1024*1024),"UTF-8")).optJSONArray("games");if(games!=null)count=games.length();}}catch(Throwable e){errors.add(message(e));}
@@ -1084,7 +1139,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 InputDevice device=InputDevice.getDevice(ids[i]);
                 if(device==null)continue;
                 int sources=device.getSources();
-                if((sources&InputDevice.SOURCE_GAMEPAD)!=InputDevice.SOURCE_GAMEPAD&&(sources&InputDevice.SOURCE_JOYSTICK)!=InputDevice.SOURCE_JOYSTICK)continue;
+                if(!padDevice(device)&&!gamepads.hasCustom(gamepads.key(device)))continue;
                 try{JSONObject item=gamepads.resolve(device).toJson();item.put("id",ids[i]);out.put(item);}catch(Exception ignored){}
             }
             return out.toString();

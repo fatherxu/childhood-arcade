@@ -158,7 +158,9 @@ public final class GamepadProfile {
     private final Map<String,Profile> cache=new HashMap<String,Profile>();
     private final Map<String,List<LibEntry>> byId=new HashMap<String,List<LibEntry>>();
     private final List<LibEntry> byName=new ArrayList<LibEntry>();
+    private final Set<String> customKeys=new HashSet<String>();
     private boolean libraryLoaded=false;
+    private boolean customLoaded=false;
 
     public GamepadProfile(Context context){
         this.context=context.getApplicationContext();
@@ -269,6 +271,24 @@ public final class GamepadProfile {
             out.put("bindings",map);
         }catch(JSONException ignored){return;}
         prefs.edit().putString(profile.deviceKey,out.toString()).apply();
+        customKeys.add(profile.deviceKey);
+    }
+
+    /** 该设备是否已有自定义绑定（同一手柄可能同时以键盘和手柄两个接口出现）。 */
+    public synchronized boolean hasCustom(String key){
+        if(key==null)return false;
+        if(!customLoaded){
+            customLoaded=true;
+            try{
+                for(Map.Entry<String,?> entry:prefs.getAll().entrySet()){
+                    Object value=entry.getValue();
+                    if(value instanceof String&&((String)value).contains("\"custom\":true"))customKeys.add(entry.getKey());
+                }
+            }catch(Throwable ignored){
+                // 读取失败时当作没有自定义绑定，不影响默认按键。
+            }
+        }
+        return customKeys.contains(key);
     }
 
     private JSONObject stored(String key){
@@ -305,6 +325,33 @@ public final class GamepadProfile {
         return true;
     }
 
+    /** 把摇杆轴或十字键方向绑定到动作（用于按键以轴上报的手柄）。 */
+    public synchronized boolean bindAxis(String key,int action,int axisCode,int dir){
+        if(action<0||action>=COUNT)return false;
+        Profile profile=cached(key);
+        if(profile==null)return false;
+        Binding binding=Binding.axis(axisCode,dir);
+        for(int other=0;other<COUNT;other++){
+            if(other==action)continue;
+            ArrayList<Binding> list=profile.bindings[other];
+            for(int i=list.size()-1;i>=0;i--){
+                Binding old=list.get(i);
+                if(old.type==Binding.AXIS&&old.code==axisCode&&old.dir==dir)list.remove(i);
+            }
+        }
+        ArrayList<Binding> target=new ArrayList<Binding>();
+        target.add(binding);
+        profile.bindings[action]=target;
+        profile.custom=true;
+        save(profile);
+        return true;
+    }
+
+    public static String axisLabel(int axisCode,int dir){
+        String name=axisCode==MotionEvent.AXIS_HAT_X?"十字键左右":axisCode==MotionEvent.AXIS_HAT_Y?"十字键上下":("轴 "+axisCode);
+        return name+(dir>0?" +":" −");
+    }
+
     public synchronized boolean swapAB(String key){
         Profile profile=cached(key);
         if(profile==null)return false;
@@ -321,6 +368,7 @@ public final class GamepadProfile {
         prefs.edit().remove(key).apply();
         calibrated.edit().remove(key).apply();
         cache.remove(key);
+        customKeys.remove(key);
         return had;
     }
 
@@ -346,9 +394,10 @@ public final class GamepadProfile {
         Set<String> keys=new HashSet<String>(prefs.getAll().keySet());
         if(deviceKeys!=null)keys.addAll(deviceKeys);
         SharedPreferences.Editor marks=calibrated.edit();
-        for(String key:keys)if(!key.equals(sourceKey)){prefs.edit().putString(key,value).apply();marks.putBoolean(key,true);}
+        for(String key:keys)if(!key.equals(sourceKey)){prefs.edit().putString(key,value).apply();customKeys.add(key);marks.putBoolean(key,true);}
         marks.putBoolean(sourceKey,true);
         marks.apply();
+        customKeys.add(sourceKey);
         cache.clear();
         save(source);
         return true;
