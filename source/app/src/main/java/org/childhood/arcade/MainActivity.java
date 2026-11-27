@@ -202,18 +202,18 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
      */
     private static boolean padDevice(InputDevice device){
         if(device==null)return false;
+        String name=device.getName();
+        String lower=name==null?"":name.toLowerCase(Locale.ROOT);
+        // 电视自带的键盘、鼠标、遥控输入设备不作为手柄。
+        if(lower.contains("keyboard")||lower.contains("mouse"))return false;
         int sources=device.getSources();
         if((sources&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD)return true;
         if((sources&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK)return true;
         boolean face=hasFaceKeys(device);
         boolean axes=hasPadAxes(device);
         if(face&&axes)return true;
-        String name=device.getName();
-        if(name!=null){
-            String lower=name.toLowerCase(Locale.ROOT);
-            if(lower.contains("gamepad")||lower.contains("joystick")||lower.contains("手柄")||lower.contains("摇杆"))return true;
-            if(lower.contains("controller")&&!lower.contains("vcontroller")&&!lower.contains("remote")&&!lower.contains("遥控"))return true;
-        }
+        if(lower.contains("gamepad")||lower.contains("joystick")||lower.contains("手柄")||lower.contains("摇杆"))return true;
+        if(lower.contains("controller")&&!lower.contains("vcontroller")&&!lower.contains("remote")&&!lower.contains("遥控"))return true;
         return false;
     }
     private static boolean hasFaceKeys(InputDevice device){
@@ -225,10 +225,9 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private static boolean hasPadAxes(InputDevice device){
         return device!=null&&device.getMotionRange(MotionEvent.AXIS_X)!=null&&device.getMotionRange(MotionEvent.AXIS_Y)!=null;
     }
-    /** 手柄设备，或保存过绑定且本身具备手柄按键/摇杆的设备（例如同一手柄的键盘接口）。 */
+    /** 是否在手柄设置中列出（只看设备本身的能力，不参考历史绑定）。 */
     private boolean listedPad(InputDevice device){
-        if(padDevice(device))return true;
-        return device!=null&&gamepads.hasCustom(gamepads.key(device))&&(hasFaceKeys(device)||hasPadAxes(device));
+        return padDevice(device);
     }
     private boolean isPad(int id){
         return listedPad(InputDevice.getDevice(id));
@@ -1143,6 +1142,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             if(inputs==null)return out.toString();
             int[] ids=inputs.getInputDeviceIds();
             for(int i=0;i<ids.length;i++){
+                if(ids[i]<0)continue;
                 InputDevice device=InputDevice.getDevice(ids[i]);
                 if(device==null)continue;
                 if(!listedPad(device))continue;
