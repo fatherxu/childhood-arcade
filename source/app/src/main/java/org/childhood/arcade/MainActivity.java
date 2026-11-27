@@ -205,10 +205,8 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         int sources=device.getSources();
         if((sources&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD)return true;
         if((sources&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK)return true;
-        boolean[] faceKeys=device.hasKeys(KeyEvent.KEYCODE_BUTTON_A,KeyEvent.KEYCODE_BUTTON_B,KeyEvent.KEYCODE_BUTTON_X,KeyEvent.KEYCODE_BUTTON_Y);
-        boolean face=false;
-        for(int i=0;i<faceKeys.length;i++)if(faceKeys[i]){face=true;break;}
-        boolean axes=device.getMotionRange(MotionEvent.AXIS_X)!=null&&device.getMotionRange(MotionEvent.AXIS_Y)!=null;
+        boolean face=hasFaceKeys(device);
+        boolean axes=hasPadAxes(device);
         if(face&&axes)return true;
         String name=device.getName();
         if(name!=null){
@@ -218,11 +216,22 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         }
         return false;
     }
-    /** 手柄设备，或已经保存过自定义绑定的设备（例如同一手柄的键盘接口）。 */
-    private boolean isPad(int id){
-        InputDevice device=InputDevice.getDevice(id);
+    private static boolean hasFaceKeys(InputDevice device){
+        if(device==null)return false;
+        boolean[] keys=device.hasKeys(KeyEvent.KEYCODE_BUTTON_A,KeyEvent.KEYCODE_BUTTON_B,KeyEvent.KEYCODE_BUTTON_X,KeyEvent.KEYCODE_BUTTON_Y);
+        for(int i=0;i<keys.length;i++)if(keys[i])return true;
+        return false;
+    }
+    private static boolean hasPadAxes(InputDevice device){
+        return device!=null&&device.getMotionRange(MotionEvent.AXIS_X)!=null&&device.getMotionRange(MotionEvent.AXIS_Y)!=null;
+    }
+    /** 手柄设备，或保存过绑定且本身具备手柄按键/摇杆的设备（例如同一手柄的键盘接口）。 */
+    private boolean listedPad(InputDevice device){
         if(padDevice(device))return true;
-        return device!=null&&gamepads.hasCustom(gamepads.key(device));
+        return device!=null&&gamepads.hasCustom(gamepads.key(device))&&(hasFaceKeys(device)||hasPadAxes(device));
+    }
+    private boolean isPad(int id){
+        return listedPad(InputDevice.getDevice(id));
     }
     private String padFingerprint(int id){
         InputDevice device=InputDevice.getDevice(id);
@@ -1136,8 +1145,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             for(int i=0;i<ids.length;i++){
                 InputDevice device=InputDevice.getDevice(ids[i]);
                 if(device==null)continue;
-                int sources=device.getSources();
-                if(!padDevice(device)&&!gamepads.hasCustom(gamepads.key(device)))continue;
+                if(!listedPad(device))continue;
                 try{JSONObject item=gamepads.resolve(device).toJson();item.put("id",ids[i]);out.put(item);}catch(Exception ignored){}
             }
             return out.toString();
