@@ -225,6 +225,13 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private static boolean hasPadAxes(InputDevice device){
         return device!=null&&device.getMotionRange(MotionEvent.AXIS_X)!=null&&device.getMotionRange(MotionEvent.AXIS_Y)!=null;
     }
+    /** 电视自带遥控器，虽然系统把它标成手柄，但排在专用手柄之后并单独标注。 */
+    private static boolean remoteName(InputDevice device){
+        String name=device==null?null:device.getName();
+        if(name==null)return false;
+        String lower=name.toLowerCase(Locale.ROOT);
+        return lower.contains("vcontroller")||lower.contains("remote")||lower.contains("遥控")||lower.contains("btrcu")||lower.contains("ir_keypad")||lower.contains("cec");
+    }
     /** 是否在手柄设置中列出（只看设备本身的能力，不参考历史绑定）。 */
     private boolean listedPad(InputDevice device){
         return padDevice(device);
@@ -355,7 +362,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         }
         int action=-1;
         if(pad){GamepadProfile.Profile profile=profile(id);if(profile!=null)action=profile.actionForKey(code);}
-        if(gamepadMonitor&&pad)js("Arcade.gamepadTest("+id+",\"key\","+code+","+down+","+action+","+JSONObject.quote(GamepadProfile.keyLabel(code))+")");
+        if(gamepadMonitor&&pad)js("Arcade.gamepadTest("+id+",\"key\","+code+",0,"+down+","+action+","+JSONObject.quote(GamepadProfile.keyLabel(code))+")");
         boolean ui=code==KeyEvent.KEYCODE_BACK||code==KeyEvent.KEYCODE_MENU||code==KeyEvent.KEYCODE_BUTTON_MODE||code==KeyEvent.KEYCODE_DPAD_UP||code==KeyEvent.KEYCODE_DPAD_DOWN||code==KeyEvent.KEYCODE_DPAD_LEFT||code==KeyEvent.KEYCODE_DPAD_RIGHT||code==KeyEvent.KEYCODE_DPAD_CENTER||code==KeyEvent.KEYCODE_ENTER;
         if(action<0&&!ui){
             if(pad&&padKey(code))return true;
@@ -1146,7 +1153,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 InputDevice device=InputDevice.getDevice(ids[i]);
                 if(device==null)continue;
                 if(!listedPad(device))continue;
-                try{JSONObject item=gamepads.resolve(device).toJson();item.put("id",ids[i]);out.put(item);}catch(Exception ignored){}
+                try{JSONObject item=gamepads.resolve(device).toJson();item.put("id",ids[i]);item.put("remote",remoteName(device));out.put(item);}catch(Exception ignored){}
             }
             return out.toString();
         }
