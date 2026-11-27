@@ -322,7 +322,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         int action=-1;
         if(pad){GamepadProfile.Profile profile=profile(id);if(profile!=null)action=profile.actionForKey(code);}
         if(gamepadMonitor&&pad)js("Arcade.gamepadTest("+id+",\"key\","+code+","+down+","+action+","+JSONObject.quote(GamepadProfile.keyLabel(code))+")");
-        boolean ui=code==KeyEvent.KEYCODE_BACK||code==KeyEvent.KEYCODE_MENU||code==KeyEvent.KEYCODE_BUTTON_MODE||(!pad&&(code==KeyEvent.KEYCODE_DPAD_UP||code==KeyEvent.KEYCODE_DPAD_DOWN||code==KeyEvent.KEYCODE_DPAD_LEFT||code==KeyEvent.KEYCODE_DPAD_RIGHT||code==KeyEvent.KEYCODE_DPAD_CENTER||code==KeyEvent.KEYCODE_ENTER));
+        boolean ui=code==KeyEvent.KEYCODE_BACK||code==KeyEvent.KEYCODE_MENU||code==KeyEvent.KEYCODE_BUTTON_MODE||code==KeyEvent.KEYCODE_DPAD_UP||code==KeyEvent.KEYCODE_DPAD_DOWN||code==KeyEvent.KEYCODE_DPAD_LEFT||code==KeyEvent.KEYCODE_DPAD_RIGHT||code==KeyEvent.KEYCODE_DPAD_CENTER||code==KeyEvent.KEYCODE_ENTER;
         if(action<0&&!ui){
             if(pad&&padKey(code))return true;
             return super.dispatchKeyEvent(e);
