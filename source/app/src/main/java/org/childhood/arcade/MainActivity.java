@@ -484,18 +484,18 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             InputDevice device=InputDevice.getDevice(cid);
             String key=device==null?null:gamepads.key(device);
             if(key!=null&&(key.equals(captureKey)||(padDevice(device)&&!remoteName(device)))){
-                int axis=0,dir=0;
+                int axis=-1,dir=0;
                 float hx=e.getAxisValue(MotionEvent.AXIS_HAT_X),hy=e.getAxisValue(MotionEvent.AXIS_HAT_Y);
                 if(Math.abs(hx)>=.5f){axis=MotionEvent.AXIS_HAT_X;dir=hx>0?1:-1;}
                 else if(Math.abs(hy)>=.5f){axis=MotionEvent.AXIS_HAT_Y;dir=hy>0?1:-1;}
                 else{
                     int[] codes={MotionEvent.AXIS_X,MotionEvent.AXIS_Y,MotionEvent.AXIS_Z,MotionEvent.AXIS_RZ,MotionEvent.AXIS_RX,MotionEvent.AXIS_RY};
-                    for(int i=0;i<codes.length&&axis==0;i++){
+                    for(int i=0;i<codes.length&&axis<0;i++){
                         float value=e.getAxisValue(codes[i]);
                         if(Math.abs(value)>=.7f){axis=codes[i];dir=value>0?1:-1;}
                     }
                 }
-                if(axis!=0){
+                if(axis>=0){
                     int action=captureAction;
                     boolean ok=gamepads.bindAxis(key,action,axis,dir);
                     if(!key.equals(captureKey))ok=gamepads.bindAxis(captureKey,action,axis,dir)||ok;
