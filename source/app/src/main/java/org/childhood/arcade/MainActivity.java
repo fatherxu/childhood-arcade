@@ -77,6 +77,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private volatile String captureKey=null;
     private volatile int captureAction=-1;
     private volatile int captureDevice=-1;
+    /** 上一次绑定时间；刚绑完的重复按键/摇杆信号直接忽略，避免连绑下一个动作。 */
+    private volatile long lastBindAt=0;
+    private volatile long lastAxisBindAt=0;
+    private volatile boolean captureArmed=true;
     private final android.os.Handler uiHandler=new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable captureTimeout=new Runnable(){public void run(){if(captureKey!=null){captureKey=null;captureAction=-1;js("Arcade.gamepadCaptureCanceled()");}}};
     private File storeDir;
@@ -348,7 +352,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private static boolean padKey(int code){return (code>=KeyEvent.KEYCODE_BUTTON_A&&code<=KeyEvent.KEYCODE_BUTTON_MODE)||(code>=188&&code<=206)||(code>=KeyEvent.KEYCODE_DPAD_UP&&code<=KeyEvent.KEYCODE_DPAD_CENTER)||code==KeyEvent.KEYCODE_ENTER;}
     private GamepadProfile.Profile profile(int id){return gamepads.resolve(InputDevice.getDevice(id));}
     private PadState state(int id){PadState s=padStates.get(id);if(s==null){s=new PadState();padStates.put(id,s);}return s;}
-    private void startCapture(String key,int action){clearCapture(false);captureKey=key;captureAction=action;captureDevice=findDevice(key);uiHandler.removeCallbacks(captureTimeout);uiHandler.postDelayed(captureTimeout,15000);}
+    private void startCapture(String key,int action){clearCapture(false);captureKey=key;captureAction=action;captureDevice=findDevice(key);
+        // 刚绑过摇杆时先等它回中，避免摇杆还推着就开始识别下一个动作。
+        captureArmed=android.os.SystemClock.elapsedRealtime()-lastAxisBindAt>1500;
+        uiHandler.removeCallbacks(captureTimeout);uiHandler.postDelayed(captureTimeout,15000);}
     private void clearCapture(boolean notify){captureKey=null;captureAction=-1;captureDevice=-1;uiHandler.removeCallbacks(captureTimeout);if(notify)js("Arcade.gamepadCaptureCanceled()");}
     /** 按设备配置键找到当前连接的设备号，用于拔掉手柄时立即中断识别。 */
     private int findDevice(String key){
@@ -449,12 +456,15 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 // 绑定期间不再要求设备被系统标记成手柄；目标手柄或其它手柄都能绑定。
                 // 电视遥控器不参与绑定，避免把遥控器按键写进手柄配置。
                 if(key!=null&&(key.equals(captureKey)||(padDevice(device)&&!remoteName(device)))){
+                    long now=android.os.SystemClock.elapsedRealtime();
+                    // 刚绑完又弹回来的同一个按键（连按）先忽略，避免把下一个动作也绑成它。
+                    if(now-lastBindAt<500)return true;
                     int action=captureAction;
                     if(action<0){clearCapture(true);return true;}
                     boolean ok=gamepads.bind(captureKey,action,code);
                     if(!key.equals(captureKey))ok=gamepads.bind(key,action,code)||ok;
                     clearCapture(false);
-                    if(ok)js("Arcade.gamepadCaptured("+action+","+JSONObject.quote(GamepadProfile.keyLabel(code))+")");
+                    if(ok){lastBindAt=now;js("Arcade.gamepadCaptured("+action+","+JSONObject.quote(GamepadProfile.keyLabel(code))+")");}
                     else js("Arcade.gamepadCaptureCanceled()");
                     return true;
                 }
@@ -484,6 +494,16 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             InputDevice device=InputDevice.getDevice(cid);
             String key=device==null?null:gamepads.key(device);
             if(key!=null&&(key.equals(captureKey)||(padDevice(device)&&!remoteName(device)))){
+                long bindNow=android.os.SystemClock.elapsedRealtime();
+                // 刚绑完的摇杆信号还在持续，先忽略；上一次绑的是摇杆时要等它回中。
+                if(bindNow-lastBindAt<500)return true;
+                if(!captureArmed){
+                    float[] vals={e.getAxisValue(MotionEvent.AXIS_X),e.getAxisValue(MotionEvent.AXIS_Y),e.getAxisValue(MotionEvent.AXIS_Z),e.getAxisValue(MotionEvent.AXIS_RZ),e.getAxisValue(MotionEvent.AXIS_RX),e.getAxisValue(MotionEvent.AXIS_RY),e.getAxisValue(MotionEvent.AXIS_HAT_X),e.getAxisValue(MotionEvent.AXIS_HAT_Y)};
+                    boolean centered=true;
+                    for(int i=0;i<vals.length;i++)if(Math.abs(vals[i])>=.4f){centered=false;break;}
+                    if(centered)captureArmed=true;
+                    return true;
+                }
                 int axis=-1,dir=0;
                 float hx=e.getAxisValue(MotionEvent.AXIS_HAT_X),hy=e.getAxisValue(MotionEvent.AXIS_HAT_Y);
                 if(Math.abs(hx)>=.5f){axis=MotionEvent.AXIS_HAT_X;dir=hx>0?1:-1;}
@@ -500,7 +520,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                     boolean ok=gamepads.bindAxis(key,action,axis,dir);
                     if(!key.equals(captureKey))ok=gamepads.bindAxis(captureKey,action,axis,dir)||ok;
                     clearCapture(false);
-                    if(ok)js("Arcade.gamepadCaptured("+action+","+JSONObject.quote(GamepadProfile.axisLabel(axis,dir))+")");
+                    if(ok){lastBindAt=bindNow;lastAxisBindAt=bindNow;captureArmed=false;js("Arcade.gamepadCaptured("+action+","+JSONObject.quote(GamepadProfile.axisLabel(axis,dir))+")");}
                     else js("Arcade.gamepadCaptureCanceled()");
                     return true;
                 }
