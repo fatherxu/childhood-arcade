@@ -399,7 +399,8 @@ public final class GamepadProfile {
             out.put("bindings",map);
         }catch(JSONException ignored){return false;}
         String value=out.toString();
-        Set<String> keys=new HashSet<String>(prefs.getAll().keySet());
+        // 只写给当前连接的其它手柄，不动历史设备和电视遥控器的配置。
+        Set<String> keys=new HashSet<String>();
         if(deviceKeys!=null)keys.addAll(deviceKeys);
         SharedPreferences.Editor marks=calibrated.edit();
         for(String key:keys)if(!key.equals(sourceKey)){prefs.edit().putString(key,value).apply();customKeys.add(key);marks.putBoolean(key,true);}

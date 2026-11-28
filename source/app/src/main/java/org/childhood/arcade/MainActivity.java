@@ -76,6 +76,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private final Runnable calibFinish=new Runnable(){public void run(){finishCalibration();}};
     private volatile String captureKey=null;
     private volatile int captureAction=-1;
+    private volatile int captureDevice=-1;
     private final android.os.Handler uiHandler=new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable captureTimeout=new Runnable(){public void run(){if(captureKey!=null){captureKey=null;captureAction=-1;js("Arcade.gamepadCaptureCanceled()");}}};
     private File storeDir;
@@ -201,9 +202,14 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private void resyncPlayers(){prunePlayers();for(Map.Entry<Integer,Integer> entry:players.entrySet())js("Arcade.nativeRegister("+entry.getKey()+","+entry.getValue()+")");}
     /** 清掉已经拔掉的设备占用的玩家位，避免手柄重新插拔后只拿到 0 号位而无法操作。 */
     private void prunePlayers(){
-        for(Integer old:new ArrayList<Integer>(players.keySet())){
+        // 用迭代器原地清理，按键分发时会频繁调用，不再每次分配快照数组。
+        Iterator<Integer> it=players.keySet().iterator();
+        while(it.hasNext()){
+            Integer old=it.next();
             if(InputDevice.getDevice(old)!=null)continue;
-            players.remove(old);
+            // 设备已经消失但回调漏发时，先松开按住的键，避免游戏里卡键。
+            releasePad(old);
+            it.remove();
             padStates.remove(old);
             axes.remove(old);
             js("Arcade.nativeRegister("+old+",0)");
@@ -329,8 +335,14 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private static boolean padKey(int code){return (code>=KeyEvent.KEYCODE_BUTTON_A&&code<=KeyEvent.KEYCODE_BUTTON_MODE)||(code>=188&&code<=206)||(code>=KeyEvent.KEYCODE_DPAD_UP&&code<=KeyEvent.KEYCODE_DPAD_CENTER)||code==KeyEvent.KEYCODE_ENTER;}
     private GamepadProfile.Profile profile(int id){return gamepads.resolve(InputDevice.getDevice(id));}
     private PadState state(int id){PadState s=padStates.get(id);if(s==null){s=new PadState();padStates.put(id,s);}return s;}
-    private void startCapture(String key,int action){clearCapture(false);captureKey=key;captureAction=action;uiHandler.removeCallbacks(captureTimeout);uiHandler.postDelayed(captureTimeout,15000);}
-    private void clearCapture(boolean notify){captureKey=null;captureAction=-1;uiHandler.removeCallbacks(captureTimeout);if(notify)js("Arcade.gamepadCaptureCanceled()");}
+    private void startCapture(String key,int action){clearCapture(false);captureKey=key;captureAction=action;captureDevice=findDevice(key);uiHandler.removeCallbacks(captureTimeout);uiHandler.postDelayed(captureTimeout,15000);}
+    private void clearCapture(boolean notify){captureKey=null;captureAction=-1;captureDevice=-1;uiHandler.removeCallbacks(captureTimeout);if(notify)js("Arcade.gamepadCaptureCanceled()");}
+    /** 按设备配置键找到当前连接的设备号，用于拔掉手柄时立即中断识别。 */
+    private int findDevice(String key){
+        if(key==null||inputs==null)return -1;
+        try{int[] ids=inputs.getInputDeviceIds();if(ids!=null)for(int i=0;i<ids.length;i++){InputDevice device=InputDevice.getDevice(ids[i]);if(device!=null&&key.equals(gamepads.key(device)))return ids[i];}}catch(Throwable ignored){}
+        return -1;
+    }
     /** 观察松开后的摇杆数秒，把测得的漂移保存为死区。 */
     private void startCalibration(String key){
         if(key==null||key.length()==0)return;
@@ -550,8 +562,8 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     @Override public void onInputDeviceChanged(int id){releasePad(id);PadState old=padStates.remove(id);if(old!=null){old.sampleStart=0;old.maxX=0;old.maxY=0;}}
     @Override public void onInputDeviceRemoved(int id){
         InputDevice device=InputDevice.getDevice(id);
-        // 只有确认被拔掉的是正在识别的手柄才取消识别，避免其他设备变动打断绑定。
-        if(captureKey!=null&&device!=null&&captureKey.equals(gamepads.key(device)))clearCapture(true);
+        // 正在识别的手柄被拔掉时立即结束识别，不必等 15 秒超时。
+        if(captureKey!=null&&(id==captureDevice||(device!=null&&captureKey.equals(gamepads.key(device)))))clearCapture(true);
         releasePad(id);axes.remove(id);padStates.remove(id);
         Boolean flag=remoteFlags.remove(id);
         boolean remote=flag!=null&&flag;
