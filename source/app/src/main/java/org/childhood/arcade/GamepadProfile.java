@@ -216,8 +216,9 @@ public final class GamepadProfile {
                 if(action<0)continue;
                 Binding binding=Binding.parse(entry.getValue());
                 if(binding==null)continue;
-                if(action>=UP&&action<=RIGHT){
-                    // 方向键沿用通用 dpad/hat 默认值，再叠加配置提示。
+                if(action>=UP&&action<=RIGHT||binding.type!=Binding.KEY){
+                    // 方向键和轴类提示沿用系统默认值再叠加：其它平台的轴编号在安卓上可能对应不到
+                    // 有效轴，不能因为一条提示就把原本能用的标准按键覆盖掉。
                     boolean duplicate=false;
                     for(int i=0;i<profile.bindings[action].size();i++){
                         Binding old=profile.bindings[action].get(i);

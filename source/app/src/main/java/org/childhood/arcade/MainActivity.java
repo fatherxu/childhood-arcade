@@ -313,6 +313,11 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 js("Arcade.nativeRegister("+holder+","+moved+")");
                 value=1;
             }
+        }else if(!remote&&value==0){
+            // 专用手柄优先：遥控器占着 1P/2P 而真实手柄没有位置时，把手柄让给真实手柄。
+            int holder=remotePlayer(1),slot=1;
+            if(holder<=0){holder=remotePlayer(2);slot=2;}
+            if(holder>0){releasePad(holder);players.put(holder,0);js("Arcade.nativeRegister("+holder+",0)");value=slot;}
         }
         players.put(id,value);
         if(!remote)try{if(value>0&&fingerprint!=null&&(preferred==0||preferred==value))playerPrefs.edit().putInt(fingerprint,value).apply();}catch(Throwable ignored){}
