@@ -158,6 +158,8 @@ public final class GamepadProfile {
     private final Map<String,Profile> cache=new HashMap<String,Profile>();
     private final Map<String,List<LibEntry>> byId=new HashMap<String,List<LibEntry>>();
     private final List<LibEntry> byName=new ArrayList<LibEntry>();
+    private final Set<String> customKeys=new HashSet<String>();
+    private boolean customLoaded=false;
     private boolean libraryLoaded=false;
 
     public GamepadProfile(Context context){
@@ -269,6 +271,23 @@ public final class GamepadProfile {
             out.put("bindings",map);
         }catch(JSONException ignored){return;}
         prefs.edit().putString(profile.deviceKey,out.toString()).apply();
+        customKeys.add(profile.deviceKey);
+    }
+
+    /** 该设备是否保存过自定义绑定（用于同一手柄的键盘接口）。 */
+    public synchronized boolean hasCustom(String key){
+        if(key==null)return false;
+        if(!customLoaded){
+            customLoaded=true;
+            try{
+                for(Map.Entry<String,?> entry:prefs.getAll().entrySet()){
+                    Object value=entry.getValue();
+                    if(value instanceof String&&((String)value).contains("\"custom\":true"))customKeys.add(entry.getKey());
+                }
+            }catch(Throwable ignored){
+            }
+        }
+        return customKeys.contains(key);
     }
 
     private JSONObject stored(String key){
@@ -348,6 +367,7 @@ public final class GamepadProfile {
         prefs.edit().remove(key).apply();
         calibrated.edit().remove(key).apply();
         cache.remove(key);
+        customKeys.remove(key);
         return had;
     }
 
@@ -373,7 +393,7 @@ public final class GamepadProfile {
         Set<String> keys=new HashSet<String>(prefs.getAll().keySet());
         if(deviceKeys!=null)keys.addAll(deviceKeys);
         SharedPreferences.Editor marks=calibrated.edit();
-        for(String key:keys)if(!key.equals(sourceKey)){prefs.edit().putString(key,value).apply();marks.putBoolean(key,true);}
+        for(String key:keys)if(!key.equals(sourceKey)){prefs.edit().putString(key,value).apply();customKeys.add(key);marks.putBoolean(key,true);}
         marks.putBoolean(sourceKey,true);
         marks.apply();
         cache.clear();

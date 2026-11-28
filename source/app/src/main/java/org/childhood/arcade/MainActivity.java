@@ -237,7 +237,9 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         return padDevice(device);
     }
     private boolean isPad(int id){
-        return listedPad(InputDevice.getDevice(id));
+        InputDevice device=InputDevice.getDevice(id);
+        if(padDevice(device))return true;
+        return device!=null&&gamepads.hasCustom(gamepads.key(device));
     }
     private String padFingerprint(int id){
         InputDevice device=InputDevice.getDevice(id);
@@ -458,9 +460,9 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             else js("Arcade.nativeKey("+action+",false,"+id+",true,false,-1)");
         }
     }
-    @Override public void onInputDeviceAdded(int id){releasePad(id);padStates.remove(id);axes.remove(id);players.remove(id);}
+    @Override public void onInputDeviceAdded(int id){releasePad(id);padStates.remove(id);axes.remove(id);players.remove(id);if(gamepadMonitor)js("Arcade.gamepadDeviceChanged()");}
     @Override public void onInputDeviceChanged(int id){releasePad(id);PadState old=padStates.remove(id);if(old!=null){old.sampleStart=0;old.maxX=0;old.maxY=0;}}
-    @Override public void onInputDeviceRemoved(int id){InputDevice device=InputDevice.getDevice(id);if(captureKey!=null&&(device==null||captureKey.equals(gamepads.key(device))))clearCapture(true);releasePad(id);axes.remove(id);padStates.remove(id);Integer p=players.remove(id);if(p!=null&&p>0&&nativeNes!=null&&nativeNes.isRunning())try{nativeNes.pause();}catch(Throwable ignored){}js("Arcade.nativeDisconnected("+id+")");}
+    @Override public void onInputDeviceRemoved(int id){InputDevice device=InputDevice.getDevice(id);if(captureKey!=null&&(device==null||captureKey.equals(gamepads.key(device))))clearCapture(true);releasePad(id);axes.remove(id);padStates.remove(id);Integer p=players.remove(id);if(p!=null&&p>0&&nativeNes!=null&&nativeNes.isRunning())try{nativeNes.pause();}catch(Throwable ignored){}js("Arcade.nativeDisconnected("+id+")");if(gamepadMonitor)js("Arcade.gamepadDeviceChanged()");}
     private static final class PadState {
         final int[] keys=new int[GamepadProfile.COUNT];
         final boolean[] axes=new boolean[GamepadProfile.COUNT];
@@ -1168,7 +1170,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public boolean nativeGamepadReset(String key){return gamepads.reset(key);}
         @JavascriptInterface public boolean nativeGamepadApplyAll(String key){
             HashSet<String> keys=new HashSet<String>();
-            if(inputs!=null)for(int id:inputs.getInputDeviceIds()){InputDevice device=InputDevice.getDevice(id);if(device!=null)keys.add(gamepads.key(device));}
+            if(inputs!=null)for(int id:inputs.getInputDeviceIds()){InputDevice device=InputDevice.getDevice(id);if(id>=0&&listedPad(device))keys.add(gamepads.key(device));}
             return gamepads.applyToAll(key,keys);
         }
         @JavascriptInterface public String readAsset(String path){if(path==null||!path.matches("roms/[a-z0-9-]+\\.nes"))return null;try{return Base64.encodeToString(readAll(getAssets().open(path),8*1024*1024),Base64.NO_WRAP);}catch(Exception e){return null;}}
