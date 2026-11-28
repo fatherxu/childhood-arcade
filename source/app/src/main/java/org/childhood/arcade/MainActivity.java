@@ -191,7 +191,12 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         inputs=(InputManager)getSystemService(INPUT_SERVICE);gamepads=new GamepadProfile(this);inputs.registerInputDeviceListener(this,null);
     }
     private void hideSystemUI(){getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE);}
-    private void js(final String value){if(web!=null)web.post(new Runnable(){public void run(){if(web!=null)web.evaluateJavascript("if(window.Arcade){"+value+"}",null);}});}
+    private void js(final String value){
+        WebView view=web;
+        if(view==null)return;
+        // 页面销毁或渲染进程退出后，排队中的脚本调用直接忽略，避免 WebView 异常中断输入处理。
+        try{view.post(new Runnable(){public void run(){if(web==null)return;try{web.evaluateJavascript("if(window.Arcade){"+value+"}",null);}catch(Throwable ignored){}}});}catch(Throwable ignored){}
+    }
     /** WebView 重载（例如恢复手机备份）会丢失 JS 状态，重放当前手柄玩家分配。 */
     private void resyncPlayers(){prunePlayers();for(Map.Entry<Integer,Integer> entry:players.entrySet())js("Arcade.nativeRegister("+entry.getKey()+","+entry.getValue()+")");}
     /** 清掉已经拔掉的设备占用的玩家位，避免手柄重新插拔后只拿到 0 号位而无法操作。 */
@@ -411,19 +416,23 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         boolean down=e.getAction()==KeyEvent.ACTION_DOWN;
         boolean repeat=e.getRepeatCount()>0;
         if(captureKey!=null&&down&&!repeat){
-            // 返回键交给界面处理（手柄设置页用返回键取消识别），菜单键只取消当前绑定。
+            // 菜单键只取消当前绑定；返回键取消识别后仍然交给界面，用来退出识别向导。
             if(code==KeyEvent.KEYCODE_MENU||code==KeyEvent.KEYCODE_BUTTON_MODE){clearCapture(true);return true;}
-            String key=device==null?null:gamepads.key(device);
-            // 绑定期间不再要求设备被系统标记成手柄；只要按的是目标手柄或手柄类设备就接受。
-            if(key!=null&&(key.equals(captureKey)||padDevice(device))){
-                int action=captureAction;
-                if(action<0){clearCapture(true);return true;}
-                boolean ok=gamepads.bind(captureKey,action,code);
-                if(!key.equals(captureKey))ok=gamepads.bind(key,action,code)||ok;
-                clearCapture(false);
-                if(ok)js("Arcade.gamepadCaptured("+action+","+JSONObject.quote(GamepadProfile.keyLabel(code))+")");
-                else js("Arcade.gamepadCaptureCanceled()");
-                return true;
+            if(code==KeyEvent.KEYCODE_BACK){clearCapture(false);js("Arcade.nativeKey(-1,true,"+id+","+pad+",false,"+code+")");return true;}
+            else{
+                String key=device==null?null:gamepads.key(device);
+                // 绑定期间不再要求设备被系统标记成手柄；目标手柄或其它手柄都能绑定。
+                // 电视遥控器不参与绑定，避免把遥控器按键写进手柄配置。
+                if(key!=null&&(key.equals(captureKey)||(padDevice(device)&&!remoteName(device)))){
+                    int action=captureAction;
+                    if(action<0){clearCapture(true);return true;}
+                    boolean ok=gamepads.bind(captureKey,action,code);
+                    if(!key.equals(captureKey))ok=gamepads.bind(key,action,code)||ok;
+                    clearCapture(false);
+                    if(ok)js("Arcade.gamepadCaptured("+action+","+JSONObject.quote(GamepadProfile.keyLabel(code))+")");
+                    else js("Arcade.gamepadCaptureCanceled()");
+                    return true;
+                }
             }
         }
         int action=-1;
@@ -449,7 +458,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             int cid=e.getDeviceId();
             InputDevice device=InputDevice.getDevice(cid);
             String key=device==null?null:gamepads.key(device);
-            if(key!=null&&(key.equals(captureKey)||padDevice(device))){
+            if(key!=null&&(key.equals(captureKey)||(padDevice(device)&&!remoteName(device)))){
                 int axis=0,dir=0;
                 float hx=e.getAxisValue(MotionEvent.AXIS_HAT_X),hy=e.getAxisValue(MotionEvent.AXIS_HAT_Y);
                 if(Math.abs(hx)>=.5f){axis=MotionEvent.AXIS_HAT_X;dir=hx>0?1:-1;}
@@ -534,7 +543,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private void releaseAllPads(){
         for(Integer id:new ArrayList<Integer>(padStates.keySet()))releasePad(id);
     }
-    @Override public void onInputDeviceAdded(int id){remoteFlags.remove(id);releasePad(id);padStates.remove(id);axes.remove(id);players.remove(id);if(gamepadMonitor)js("Arcade.gamepadDeviceChanged()");}
+    @Override public void onInputDeviceAdded(int id){remoteFlags.remove(id);releasePad(id);padStates.remove(id);axes.remove(id);
+        // 设备重新接入时清掉旧玩家位，同时通知页面，避免原生分配和页面记录不一致。
+        if(players.remove(id)!=null)js("Arcade.nativeRegister("+id+",0)");
+        if(gamepadMonitor)js("Arcade.gamepadDeviceChanged()");}
     @Override public void onInputDeviceChanged(int id){releasePad(id);PadState old=padStates.remove(id);if(old!=null){old.sampleStart=0;old.maxX=0;old.maxY=0;}}
     @Override public void onInputDeviceRemoved(int id){
         InputDevice device=InputDevice.getDevice(id);
@@ -1236,6 +1248,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
             JSONArray out=new JSONArray();
             if(inputs==null)return out.toString();
             int[] ids=inputs.getInputDeviceIds();
+            if(ids==null)return out.toString();
             for(int i=0;i<ids.length;i++){
                 if(ids[i]<0)continue;
                 InputDevice device=InputDevice.getDevice(ids[i]);
@@ -1256,7 +1269,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public boolean nativeGamepadReset(String key){return gamepads.reset(key);}
         @JavascriptInterface public boolean nativeGamepadApplyAll(String key){
             HashSet<String> keys=new HashSet<String>();
-            if(inputs!=null)for(int id:inputs.getInputDeviceIds()){InputDevice device=InputDevice.getDevice(id);if(id>=0&&listedPad(device))keys.add(gamepads.key(device));}
+            int[] ids=inputs==null?null:inputs.getInputDeviceIds();
+            if(ids!=null)for(int id:ids){InputDevice device=InputDevice.getDevice(id);
+                // 电视遥控器不写入手柄配置，避免覆盖它自己的按键。
+                if(id>=0&&listedPad(device)&&!remoteName(device))keys.add(gamepads.key(device));}
             return gamepads.applyToAll(key,keys);
         }
         @JavascriptInterface public String readAsset(String path){if(path==null||!path.matches("roms/[a-z0-9-]+\\.nes"))return null;try{return Base64.encodeToString(readAll(getAssets().open(path),8*1024*1024),Base64.NO_WRAP);}catch(Exception e){return null;}}

@@ -291,7 +291,10 @@ public final class GamepadProfile {
     }
 
     private JSONObject stored(String key){
-        String value=prefs.getString(key,"");
+        if(key==null)return null;
+        String value;
+        // 配置存储被写成其它类型时不要让主线程抛 ClassCastException。
+        try{value=prefs.getString(key,"");}catch(Throwable e){return null;}
         if(value.length()==0)return null;
         try{return new JSONObject(value);}catch(Exception e){return null;}
     }
@@ -311,10 +314,13 @@ public final class GamepadProfile {
         Profile profile=cached(key);
         if(profile==null)return false;
         Binding binding=Binding.key(keyCode);
+        // 读取绑定列表发生在主线程（按键分发），这里换新列表而不是原地删除，避免并发修改。
         for(int other=0;other<COUNT;other++){
             if(other==action)continue;
             ArrayList<Binding> list=profile.bindings[other];
-            for(int i=list.size()-1;i>=0;i--)if(list.get(i).isKey(keyCode))list.remove(i);
+            ArrayList<Binding> next=new ArrayList<Binding>(list.size());
+            for(int i=0;i<list.size();i++)if(!list.get(i).isKey(keyCode))next.add(list.get(i));
+            if(next.size()!=list.size())profile.bindings[other]=next;
         }
         ArrayList<Binding> target=new ArrayList<Binding>();
         target.add(binding);
@@ -330,13 +336,16 @@ public final class GamepadProfile {
         Profile profile=cached(key);
         if(profile==null)return false;
         Binding binding=Binding.axis(axisCode,dir);
+        // 同上：主线程可能正在遍历这些列表，统一改成替换新列表。
         for(int other=0;other<COUNT;other++){
             if(other==action)continue;
             ArrayList<Binding> list=profile.bindings[other];
-            for(int i=list.size()-1;i>=0;i--){
+            ArrayList<Binding> next=new ArrayList<Binding>(list.size());
+            for(int i=0;i<list.size();i++){
                 Binding old=list.get(i);
-                if(old.type==Binding.AXIS&&old.code==axisCode&&old.dir==dir)list.remove(i);
+                if(!(old.type==Binding.AXIS&&old.code==axisCode&&old.dir==dir))next.add(old);
             }
+            if(next.size()!=list.size())profile.bindings[other]=next;
         }
         ArrayList<Binding> target=new ArrayList<Binding>();
         target.add(binding);
@@ -419,7 +428,8 @@ public final class GamepadProfile {
     }
 
     public boolean hasCalibration(String key){
-        return key!=null&&calibrated.getBoolean(key,false);
+        if(key==null)return false;
+        try{return calibrated.getBoolean(key,false);}catch(Throwable e){return false;}
     }
 
     // ------------------------------------------------------------------ 工具方法
