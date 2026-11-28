@@ -193,7 +193,17 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private void hideSystemUI(){getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE);}
     private void js(final String value){if(web!=null)web.post(new Runnable(){public void run(){if(web!=null)web.evaluateJavascript("if(window.Arcade){"+value+"}",null);}});}
     /** WebView 重载（例如恢复手机备份）会丢失 JS 状态，重放当前手柄玩家分配。 */
-    private void resyncPlayers(){for(Map.Entry<Integer,Integer> entry:players.entrySet())js("Arcade.nativeRegister("+entry.getKey()+","+entry.getValue()+")");}
+    private void resyncPlayers(){prunePlayers();for(Map.Entry<Integer,Integer> entry:players.entrySet())js("Arcade.nativeRegister("+entry.getKey()+","+entry.getValue()+")");}
+    /** 清掉已经拔掉的设备占用的玩家位，避免手柄重新插拔后只拿到 0 号位而无法操作。 */
+    private void prunePlayers(){
+        for(Integer old:new ArrayList<Integer>(players.keySet())){
+            if(InputDevice.getDevice(old)!=null)continue;
+            players.remove(old);
+            padStates.remove(old);
+            axes.remove(old);
+            js("Arcade.nativeRegister("+old+",0)");
+        }
+    }
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)hideSystemUI();}
     @Override protected void onResume(){super.onResume();pageActive=true;}
     @Override protected void onPause(){pageActive=false;releaseAllPads();if(nativeNes!=null)try{nativeNes.pause();}catch(Throwable ignored){}super.onPause();js("Arcade.lifecyclePause()");}
@@ -252,6 +262,7 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     }
     /** 专用手柄优先占用 1P；电视遥控器只在没有专用手柄时使用 1P。 */
     private int player(int id){
+        prunePlayers();
         InputDevice device=InputDevice.getDevice(id);
         // 系统注入或已消失的设备没有真实手柄，不占用 1P，避免挤掉真正的手柄。
         if(device==null)return 1;
