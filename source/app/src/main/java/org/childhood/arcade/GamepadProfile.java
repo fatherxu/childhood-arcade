@@ -372,6 +372,7 @@ public final class GamepadProfile {
     }
 
     public synchronized boolean reset(String key){
+        if(key==null)return false;
         boolean had=prefs.contains(key);
         prefs.edit().remove(key).apply();
         calibrated.edit().remove(key).apply();

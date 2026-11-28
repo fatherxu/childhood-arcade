@@ -83,6 +83,9 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private final Object storeLock = new Object();
     private static final Object PACK_IMPORT_LOCK = new Object();
     private static final int PICK_FILE=10, EXPORT_FILE=11, PICK_FOLDER=12, PICK_BACKUP=13, MAX_LIBRARY=2000, MAX_SCAN_DEPTH=4;
+    /** 渲染进程反复退出时限制自动重建次数，避免无限重建。 */
+    private static long lastRecreateAt=0;
+    private static int recreateCount=0;
     private volatile boolean scanning=false;
     private volatile boolean importCancel=false;
     private android.content.SharedPreferences playerPrefs;
@@ -161,7 +164,12 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 return null;
             }
             @Override public void onPageFinished(WebView v,String url){hideSystemUI();if(url.equals("https://appassets.androidplatform.net/assets/index.html")){/* 页面重新加载后旧的监听和绑定状态都已经失效 */gamepadMonitor=false;clearCapture(false);getSharedPreferences("deployment",0).edit().putBoolean("page_loaded",true).apply();/* 页面就绪后再导入离线游戏包，导入结果才能刷新界面 */packs.importLocal();}resyncPlayers();}
-            @Override public boolean onRenderProcessGone(WebView v,android.webkit.RenderProcessGoneDetail detail){if(v!=web)return true;android.util.Log.w("ArcadeWeb","渲染进程已退出，正在重建页面");uiHandler.post(new Runnable(){public void run(){if(isFinishing())return;try{recreate();}catch(Throwable ignored){finish();}}});return true;}
+            @Override public boolean onRenderProcessGone(WebView v,android.webkit.RenderProcessGoneDetail detail){if(v!=web)return true;android.util.Log.w("ArcadeWeb","渲染进程已退出，正在重建页面");uiHandler.post(new Runnable(){public void run(){if(isFinishing())return;
+                long now=android.os.SystemClock.elapsedRealtime();
+                if(now-lastRecreateAt>20000)recreateCount=0;
+                lastRecreateAt=now;
+                if(++recreateCount>2){Toast.makeText(MainActivity.this,"页面连续异常，请退出后重新打开应用",Toast.LENGTH_LONG).show();finish();return;}
+                try{recreate();}catch(Throwable ignored){finish();}}});return true;}
         });
         web.setWebChromeClient(new WebChromeClient(){
             @Override public boolean onShowFileChooser(WebView v,ValueCallback<Uri[]> callback,FileChooserParams params){
@@ -1274,7 +1282,10 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public void startGamepadCalibration(String key){MainActivity.this.startCalibration(key);}
         @JavascriptInterface public String gamepadCalibration(){return calibrationStatus();}
         @JavascriptInterface public void cancelGamepadCalibration(){stopCalibration();}
-        @JavascriptInterface public void nativeGamepadCapture(String key,int action){startCapture(key,action);}
+        @JavascriptInterface public void nativeGamepadCapture(String key,int action){
+            if(key==null||key.length()==0||action<0||action>=GamepadProfile.COUNT)return;
+            startCapture(key,action);
+        }
         @JavascriptInterface public void nativeGamepadCaptureCancel(){clearCapture(false);}
         @JavascriptInterface public boolean nativeGamepadLayout(String key,String layout){return gamepads.setLayout(key,layout);}
         @JavascriptInterface public boolean nativeGamepadSwap(String key){return gamepads.swapAB(key);}
