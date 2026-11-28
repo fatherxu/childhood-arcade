@@ -247,16 +247,62 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         String descriptor=device.getDescriptor();
         return gamepads.key(device)+":"+(descriptor==null?"":descriptor);
     }
-    /** 优先沿用该手柄上次的玩家位；否则占用第一个空闲位。 */
+    /** 专用手柄优先占用 1P；电视遥控器只在没有专用手柄时使用 1P。 */
     private int player(int id){
-        Integer existing=players.get(id);if(existing!=null)return existing;
+        InputDevice device=InputDevice.getDevice(id);
+        boolean remote=remoteName(device);
+        Integer existing=players.get(id);
+        if(existing!=null){
+            // 1P 空出来后自动补位，避免拔掉手柄后遥控器仍留在 2P。
+            if(existing==1||players.containsValue(1))return existing;
+            releasePad(id);
+            players.put(id,1);
+            js("Arcade.nativeRegister("+id+",1)");
+            return 1;
+        }
         String fingerprint=padFingerprint(id);
         int preferred=0;
-        try{if(fingerprint!=null)preferred=playerPrefs.getInt(fingerprint,0);}catch(Throwable ignored){}
-        int value=preferred>0&&!players.containsValue(preferred)?preferred:(!players.containsValue(1)?1:!players.containsValue(2)?2:0);
+        if(remote)preferred=hasRealPad(id)?2:1;
+        else try{if(fingerprint!=null)preferred=playerPrefs.getInt(fingerprint,0);}catch(Throwable ignored){}
+        int value;
+        if(!players.containsValue(1))value=1;
+        else if(preferred>0&&!players.containsValue(preferred))value=preferred;
+        else if(!players.containsValue(2))value=2;
+        else value=0;
+        if(!remote&&value==2){
+            int holder=remotePlayer(1);
+            if(holder>0){
+                releasePad(holder);
+                int moved=players.containsValue(2)?0:2;
+                players.put(holder,moved);
+                js("Arcade.nativeRegister("+holder+","+moved+")");
+                value=1;
+            }
+        }
         players.put(id,value);
-        try{if(value>0&&fingerprint!=null&&(preferred==0||preferred==value))playerPrefs.edit().putInt(fingerprint,value).apply();}catch(Throwable ignored){}
+        if(!remote)try{if(value>0&&fingerprint!=null&&(preferred==0||preferred==value))playerPrefs.edit().putInt(fingerprint,value).apply();}catch(Throwable ignored){}
         js("Arcade.nativeRegister("+id+","+value+")");return value;
+    }
+    /** 是否接着专用手柄（排除电视遥控器和指定设备）。 */
+    private boolean hasRealPad(int exclude){
+        try{
+            int[] ids=inputs==null?null:inputs.getInputDeviceIds();
+            if(ids!=null)for(int i=0;i<ids.length;i++){
+                int other=ids[i];
+                if(other==exclude||other<0)continue;
+                InputDevice device=InputDevice.getDevice(other);
+                if(padDevice(device)&&!remoteName(device))return true;
+            }
+        }catch(Throwable ignored){
+        }
+        return false;
+    }
+    private int remotePlayer(int slot){
+        for(Integer other:players.keySet()){
+            Integer value=players.get(other);
+            if(value!=null&&value==slot&&remoteName(InputDevice.getDevice(other)))return other;
+        }
+        return -1;
     }
     private static boolean volumeKey(int code){return code==KeyEvent.KEYCODE_VOLUME_UP||code==KeyEvent.KEYCODE_VOLUME_DOWN||code==KeyEvent.KEYCODE_VOLUME_MUTE;}
     private static boolean padKey(int code){return (code>=KeyEvent.KEYCODE_BUTTON_A&&code<=KeyEvent.KEYCODE_BUTTON_MODE)||(code>=188&&code<=206)||(code>=KeyEvent.KEYCODE_DPAD_UP&&code<=KeyEvent.KEYCODE_DPAD_CENTER)||code==KeyEvent.KEYCODE_ENTER;}
@@ -343,12 +389,12 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         int code=e.getKeyCode();
         if(volumeKey(code))return super.dispatchKeyEvent(e);
         int id=e.getDeviceId();
+        InputDevice device=InputDevice.getDevice(id);
         boolean pad=isPad(id);
         boolean down=e.getAction()==KeyEvent.ACTION_DOWN;
         boolean repeat=e.getRepeatCount()>0;
         if(captureKey!=null&&down&&!repeat){
             if(code==KeyEvent.KEYCODE_BACK||code==KeyEvent.KEYCODE_MENU||code==KeyEvent.KEYCODE_BUTTON_MODE){clearCapture(true);return true;}
-            InputDevice device=InputDevice.getDevice(id);
             String key=device==null?null:gamepads.key(device);
             // 绑定期间不再要求设备被系统标记成手柄；只要按的是目标手柄或手柄类设备就接受。
             if(key!=null&&(key.equals(captureKey)||padDevice(device))){
@@ -365,6 +411,8 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         int action=-1;
         if(pad){GamepadProfile.Profile profile=profile(id);if(profile!=null)action=profile.actionForKey(code);}
         if(gamepadMonitor&&pad)js("Arcade.gamepadTest("+id+",\"key\","+code+",0,"+down+","+action+","+JSONObject.quote(GamepadProfile.keyLabel(code))+")");
+        // 手柄设置页上，专用手柄的 A/B 只用于测试和绑定，避免误触界面；遥控器仍可正常操作。
+        if(gamepadMonitor&&device!=null&&!remoteName(device)&&(code==KeyEvent.KEYCODE_BUTTON_A||code==KeyEvent.KEYCODE_BUTTON_B))return true;
         boolean ui=code==KeyEvent.KEYCODE_BACK||code==KeyEvent.KEYCODE_MENU||code==KeyEvent.KEYCODE_BUTTON_MODE||code==KeyEvent.KEYCODE_DPAD_UP||code==KeyEvent.KEYCODE_DPAD_DOWN||code==KeyEvent.KEYCODE_DPAD_LEFT||code==KeyEvent.KEYCODE_DPAD_RIGHT||code==KeyEvent.KEYCODE_DPAD_CENTER||code==KeyEvent.KEYCODE_ENTER;
         if(action<0&&!ui){
             if(pad&&padKey(code))return true;
